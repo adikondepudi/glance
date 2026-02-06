@@ -1,0 +1,7 @@
+.DS_Store
+build/
+glance.xcodeproj/
+*.xcuserstate
+xcuserdata/
+DerivedData/
+CLAUDE.md

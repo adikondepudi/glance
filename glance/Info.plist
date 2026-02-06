@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>glance</string>
+    <key>CFBundleDisplayName</key>
+    <string>glance</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleVersion</key>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$(MARKETING_VERSION)</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSCameraUsageDescription</key>
+    <string>glance checks if your camera is active to detect meetings and pause break reminders.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>glance checks if your microphone is active to detect meetings and pause break reminders.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>glance needs to run AppleScripts for break automations.</string>
+    <key>NSAppleScriptEnabled</key>
+    <true/>
+</dict>
+</plist>

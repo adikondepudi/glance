@@ -1,0 +1,30 @@
+name: glance
+options:
+  bundleIdPrefix: com.glance
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+  minimumXcodeGenVersion: "2.38.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+targets:
+  glance:
+    type: application
+    platform: macOS
+    sources:
+      - glance
+    settings:
+      base:
+        INFOPLIST_FILE: glance/Info.plist
+        CODE_SIGN_ENTITLEMENTS: glance/glance.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.glance.app
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: 1
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        ENABLE_HARDENED_RUNTIME: YES
