@@ -5,6 +5,11 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
+            StatsTab()
+                .tabItem {
+                    Label("Stats", systemImage: "chart.bar")
+                }
+
             GeneralTab()
                 .tabItem {
                     Label("General", systemImage: "gear")

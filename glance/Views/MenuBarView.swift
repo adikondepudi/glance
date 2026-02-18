@@ -91,9 +91,18 @@ struct MenuBarView: View {
                     .help("Breaks taken")
                 Label(formatDuration(breakManager.totalScreenTime), systemImage: "desktopcomputer")
                     .help("Screen time")
+                Label("\(StatsManager.shared.todayStats.screenScore)", systemImage: "chart.bar")
+                    .help("Screen Score")
             }
             .font(.caption)
             .foregroundStyle(.tertiary)
+
+            // Pomodoro cycle counter
+            if settings.timerMode == .pomodoro {
+                Text(breakManager.formattedPomodoroCycle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
 
             // Time since last break (#1)
             if case .working = breakManager.state {

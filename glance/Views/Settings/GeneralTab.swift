@@ -19,6 +19,27 @@ struct GeneralTab: View {
 
                 Toggle("Show menu bar icon", isOn: $settings.showMenuBarIcon)
 
+                if settings.showMenuBarIcon {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Icon")
+                            .font(.callout)
+                        HStack(spacing: 8) {
+                            ForEach(MenuBarIcon.allCases, id: \.self) { icon in
+                                Button {
+                                    settings.menuBarIcon = icon
+                                } label: {
+                                    Image(systemName: icon.rawValue)
+                                        .font(.title3)
+                                        .frame(width: 32, height: 32)
+                                        .background(settings.menuBarIcon == icon ? Color.accentColor.opacity(0.2) : Color.clear)
+                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
                 Picker("Menu bar display", selection: Binding(
                     get: { settings.menuBarStyle },
                     set: { settings.menuBarStyle = $0 }
@@ -33,6 +54,10 @@ struct GeneralTab: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
+
+                Text("Right-click the menu bar icon for quick actions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Idle Detection") {

@@ -9,6 +9,7 @@ class WellnessManager: ObservableObject {
     private let settings = AppSettings.shared
     private var blinkTimer: Timer?
     private var postureTimer: Timer?
+    private var customReminderTimers: [UUID: Timer] = [:]
 
     func start() {
         requestNotificationPermission()
@@ -34,6 +35,35 @@ class WellnessManager: ObservableObject {
                 }
             }
         }
+
+        resetCustomReminderTimers()
+    }
+
+    // MARK: - Custom Reminders
+
+    func resetCustomReminderTimers() {
+        for (_, timer) in customReminderTimers {
+            timer.invalidate()
+        }
+        customReminderTimers.removeAll()
+
+        for reminder in settings.customReminders where reminder.enabled {
+            let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(reminder.intervalMinutes * 60), repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    self?.showCustomReminder(reminder)
+                }
+            }
+            customReminderTimers[reminder.id] = timer
+        }
+    }
+
+    private func showCustomReminder(_ reminder: CustomReminder) {
+        let title = reminder.name.isEmpty ? "Reminder" : reminder.name
+        showNotification(
+            title: title,
+            body: reminder.message,
+            withSound: reminder.soundEnabled
+        )
     }
 
     private func showBlinkReminder() {
@@ -50,11 +80,13 @@ class WellnessManager: ObservableObject {
         )
     }
 
-    private func showNotification(title: String, body: String) {
+    private func showNotification(title: String, body: String, withSound: Bool = true) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.sound = .default
+        if withSound {
+            content.sound = .default
+        }
 
         let request = UNNotificationRequest(
             identifier: UUID().uuidString,

@@ -17,11 +17,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var breakWindowControllers: [BreakWindowController] = []
+    private var windDownWindowControllers: [WindDownWindowController] = []
     private var reminderWindow: ReminderWindowController?
     private var onboardingWindow: NSWindow?
     private var idleReturnWindow: NSWindow?
     private let breakManager = BreakManager.shared
     private let wellness = WellnessManager.shared
+    private let windDown = WindDownManager.shared
+    private let stats = StatsManager.shared
     private let settings = AppSettings.shared
     private var eventMonitor: Any?
     private var clickMonitor: Any?
@@ -32,12 +35,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBar()
         setupNotificationObservers()
         wellness.start()
+        windDown.start()
         setupGlobalShortcuts()
+        migrateSoundSettings()
 
         // Onboarding (#11)
         if !settings.hasCompletedOnboarding {
             showOnboarding()
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        stats.saveNow()
+    }
+
+    // MARK: - Sound Settings Migration
+
+    private func migrateSoundSettings() {
+        guard !settings.soundSettingsMigrated else { return }
+        settings.playSoundShortBreakStart = settings.playSoundOnBreakStart
+        settings.playSoundShortBreakEnd = settings.playSoundOnBreakEnd
+        settings.playSoundLongBreakStart = settings.playSoundOnBreakStart
+        settings.playSoundLongBreakEnd = settings.playSoundOnBreakEnd
+        settings.selectedSoundShortBreakStart = settings.selectedSound
+        settings.selectedSoundShortBreakEnd = settings.selectedSound
+        settings.selectedSoundLongBreakStart = settings.selectedSound
+        settings.selectedSoundLongBreakEnd = settings.selectedSound
+        settings.soundSettingsMigrated = true
     }
 
     // MARK: - Menu Bar
@@ -46,11 +70,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "eye", accessibilityDescription: "glance")
+            let iconName = settings.menuBarIcon.rawValue
+            button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "glance")
             button.image?.size = NSSize(width: 16, height: 16)
             button.imagePosition = .imageLeading
-            button.action = #selector(togglePopover)
+            button.action = #selector(handleStatusItemClick)
             button.target = self
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
 
         popover = NSPopover()
@@ -73,17 +99,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     private func updateMenuBarTitle() {
         let style = settings.menuBarStyle
+        let iconName = settings.menuBarIcon.rawValue
 
         // Icon visibility (#8, #15)
         if style == .textOnly || !settings.showMenuBarIcon {
             statusItem.button?.image = nil
         } else {
-            if statusItem.button?.image == nil {
-                let img = NSImage(systemSymbolName: "eye", accessibilityDescription: "glance")
-                img?.size = NSSize(width: 16, height: 16)
-                statusItem.button?.image = img
-                statusItem.button?.imagePosition = .imageLeading
-            }
+            let img = NSImage(systemSymbolName: iconName, accessibilityDescription: "glance")
+            img?.size = NSSize(width: 16, height: 16)
+            statusItem.button?.image = img
+            statusItem.button?.imagePosition = .imageLeading
         }
 
         // Text visibility (#15)
@@ -113,6 +138,68 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .countdown(let s):
             statusItem.button?.title = " \(s)..."
         }
+    }
+
+    @objc private func handleStatusItemClick() {
+        guard let event = NSApp.currentEvent else {
+            togglePopover()
+            return
+        }
+
+        if event.type == .rightMouseUp {
+            showContextMenu()
+        } else {
+            togglePopover()
+        }
+    }
+
+    private func showContextMenu() {
+        let menu = NSMenu()
+
+        menu.addItem(NSMenuItem(title: "Start Break", action: #selector(contextStartBreak), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+
+        // Check pause state on main actor
+        let isPaused = MainActor.assumeIsolated { breakManager.isPausedByUser }
+        if isPaused {
+            menu.addItem(NSMenuItem(title: "Resume", action: #selector(contextResume), keyEquivalent: ""))
+        } else {
+            menu.addItem(NSMenuItem(title: "Pause", action: #selector(contextPause), keyEquivalent: ""))
+        }
+
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Settings...", action: #selector(contextOpenSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Quit Glance", action: #selector(contextQuit), keyEquivalent: "q"))
+
+        for item in menu.items {
+            item.target = self
+        }
+
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    @objc private func contextStartBreak() {
+        Task { @MainActor in breakManager.startBreakNow() }
+    }
+
+    @objc private func contextPause() {
+        Task { @MainActor in breakManager.pauseByUser() }
+    }
+
+    @objc private func contextResume() {
+        Task { @MainActor in breakManager.resumeByUser() }
+    }
+
+    @objc private func contextOpenSettings() {
+        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func contextQuit() {
+        NSApp.terminate(nil)
     }
 
     @objc private func togglePopover() {
@@ -155,6 +242,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowBreakReminder), name: .showBreakReminder, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissBreakReminder), name: .dismissBreakReminder, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowIdleReturnPrompt), name: .showIdleReturnPrompt, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleShowWindDown), name: .showWindDownOverlay, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleDismissWindDown), name: .dismissWindDownOverlay, object: nil)
     }
 
     @objc private func handleShowBreakOverlay(_ notification: Notification) {
@@ -179,6 +268,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { [weak self] in
             self?.dismissReminderWindow()
         }
+    }
+
+    // MARK: - Wind Down Overlay
+
+    @objc private func handleShowWindDown() {
+        DispatchQueue.main.async { [weak self] in
+            self?.showWindDownOverlay()
+        }
+    }
+
+    @objc private func handleDismissWindDown() {
+        DispatchQueue.main.async { [weak self] in
+            self?.dismissWindDownOverlay()
+        }
+    }
+
+    private func showWindDownOverlay() {
+        dismissWindDownOverlay()
+        for screen in NSScreen.screens {
+            let controller = WindDownWindowController(screen: screen)
+            controller.showWindow(nil)
+            windDownWindowControllers.append(controller)
+        }
+    }
+
+    private func dismissWindDownOverlay() {
+        for controller in windDownWindowControllers {
+            controller.close()
+        }
+        windDownWindowControllers.removeAll()
     }
 
     // MARK: - Break Overlay (all screens)

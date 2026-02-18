@@ -16,31 +16,31 @@ class SoundManager {
         ("Breeze", "breeze"),
     ]
 
-    func playBreakSound() {
-        let volume = Float(settings.soundVolume)
-        let soundName = settings.selectedSound
+    private static let systemSoundMap: [String: String] = [
+        "chime": "/System/Library/Sounds/Tink.aiff",
+        "bell": "/System/Library/Sounds/Ping.aiff",
+        "ping": "/System/Library/Sounds/Pop.aiff",
+        "glass": "/System/Library/Sounds/Glass.aiff",
+        "breeze": "/System/Library/Sounds/Breeze.aiff",
+    ]
 
-        // Try built-in system sounds first
-        let systemSoundMap: [String: String] = [
-            "chime": "/System/Library/Sounds/Tink.aiff",
-            "bell": "/System/Library/Sounds/Ping.aiff",
-            "ping": "/System/Library/Sounds/Pop.aiff",
-            "glass": "/System/Library/Sounds/Glass.aiff",
-            "breeze": "/System/Library/Sounds/Breeze.aiff",
-        ]
+    func playBreakSound() {
+        playSound(named: settings.selectedSound)
+    }
+
+    func playSound(named soundName: String) {
+        let volume = Float(settings.soundVolume)
 
         var soundURL: URL?
 
-        if let systemPath = systemSoundMap[soundName] {
+        if let systemPath = Self.systemSoundMap[soundName] {
             soundURL = URL(fileURLWithPath: systemPath)
         } else if soundName.hasPrefix("/") || soundName.hasPrefix("~") {
-            // Custom sound file path
             let expanded = NSString(string: soundName).expandingTildeInPath
             soundURL = URL(fileURLWithPath: expanded)
         }
 
         guard let url = soundURL, FileManager.default.fileExists(atPath: url.path) else {
-            // Fallback to NSSound
             NSSound.beep()
             return
         }

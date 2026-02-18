@@ -29,12 +29,14 @@ class BreakManager: ObservableObject {
     @Published var secondsSinceLastBreak: Int = 0
     @Published var breaksSkippedCount: Int = 0
     @Published var postponeCountToday: Int = 0
+    @Published var pomodoroCycle: Int = 0
 
     private let settings = AppSettings.shared
     private let smartPause = SmartPauseManager.shared
     private let idleDetector = IdleDetector.shared
     private let automation = AutomationManager.shared
     private let sound = SoundManager.shared
+    private let stats = StatsManager.shared
 
     private var workTimer: Timer?
     private var breakTimer: Timer?
@@ -46,6 +48,8 @@ class BreakManager: ObservableObject {
     private var smartPauseCooldownTimer: Timer?
     private var lastResetDate: Date = Date()
     private var previousIdleDuration: TimeInterval = 0
+    private var lastTriggeredScheduledBreaks: Set<UUID> = []
+    private var lastScheduledBreakCheckMinute: Int = -1
 
     private init() {
         resetWorkTimer()
@@ -59,9 +63,16 @@ class BreakManager: ObservableObject {
         workTimer?.invalidate()
         overtimeTimer?.invalidate()
         overtimeSeconds = 0
-        secondsUntilBreak = settings.shortBreakInterval * 60
+
+        if settings.timerMode == .pomodoro {
+            secondsUntilBreak = settings.pomodoroWorkMinutes * 60
+        } else {
+            secondsUntilBreak = settings.shortBreakInterval * 60
+        }
+
         sessionStartDate = Date()
         state = .working
+        NotificationCenter.default.post(name: .enteredWorkingState, object: nil)
 
         workTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -80,6 +91,7 @@ class BreakManager: ObservableObject {
         if !isWithinSchedule() {
             state = .outsideSchedule
             workTimer?.invalidate()
+            NotificationCenter.default.post(name: .enteredOutsideSchedule, object: nil)
             scheduleNextScheduleCheck()
             return
         }
@@ -87,6 +99,9 @@ class BreakManager: ObservableObject {
         secondsUntilBreak -= 1
         totalScreenTime += 1
         secondsSinceLastBreak += 1
+
+        // Check scheduled breaks
+        checkScheduledBreaks()
 
         // Pre-break reminder
         if settings.showPreBreakReminder && secondsUntilBreak == settings.preBreakReminderSeconds && state == .working {
@@ -139,7 +154,12 @@ class BreakManager: ObservableObject {
         }
 
         // Determine if long break
-        let isLong = settings.longBreakEnabled && (shortBreakCount + 1) % settings.longBreakInterval == 0
+        let isLong: Bool
+        if settings.timerMode == .pomodoro {
+            isLong = (pomodoroCycle + 1) % settings.pomodoroLongBreakAfter == 0
+        } else {
+            isLong = settings.longBreakEnabled && (shortBreakCount + 1) % settings.longBreakInterval == 0
+        }
 
         countdownValue = settings.countdownDuration
         state = .countdown(countdownValue)
@@ -160,12 +180,24 @@ class BreakManager: ObservableObject {
     }
 
     func startBreak(isLong: Bool) {
-        let duration = isLong ? settings.longBreakDuration : settings.shortBreakDuration
+        let duration: Int
+        if settings.timerMode == .pomodoro {
+            duration = isLong ? settings.pomodoroLongBreakSeconds : settings.pomodoroShortBreakSeconds
+        } else {
+            duration = isLong ? settings.longBreakDuration : settings.shortBreakDuration
+        }
         currentBreakDuration = duration
         secondsIntoBreak = 0
         state = .onBreak(isLong: isLong)
 
-        if settings.playSoundOnBreakStart {
+        // Per-break-type sounds
+        if settings.soundSettingsMigrated {
+            let shouldPlay = isLong ? settings.playSoundLongBreakStart : settings.playSoundShortBreakStart
+            if shouldPlay {
+                let soundName = isLong ? settings.selectedSoundLongBreakStart : settings.selectedSoundShortBreakStart
+                sound.playSound(named: soundName)
+            }
+        } else if settings.playSoundOnBreakStart {
             sound.playBreakSound()
         }
 
@@ -173,9 +205,13 @@ class BreakManager: ObservableObject {
         let trigger: AutomationAction.AutomationTrigger = isLong ? .longBreakStart : .breakStart
         automation.runAutomations(for: trigger)
 
-        // Lock screen if enabled
+        // Lock screen if enabled (with mode check)
         if settings.lockOnBreak {
-            lockScreen()
+            let mode = settings.lockOnBreakMode
+            let shouldLock = mode == .all || (mode == .longOnly && isLong) || (mode == .shortOnly && !isLong)
+            if shouldLock {
+                lockScreen()
+            }
         }
 
         NotificationCenter.default.post(name: .showBreakOverlay, object: isLong)
@@ -198,7 +234,14 @@ class BreakManager: ObservableObject {
     func endBreak(isLong: Bool) {
         breakTimer?.invalidate()
 
-        if settings.playSoundOnBreakEnd {
+        // Per-break-type sounds
+        if settings.soundSettingsMigrated {
+            let shouldPlay = isLong ? settings.playSoundLongBreakEnd : settings.playSoundShortBreakEnd
+            if shouldPlay {
+                let soundName = isLong ? settings.selectedSoundLongBreakEnd : settings.selectedSoundShortBreakEnd
+                sound.playSound(named: soundName)
+            }
+        } else if settings.playSoundOnBreakEnd {
             sound.playBreakSound()
         }
 
@@ -207,6 +250,15 @@ class BreakManager: ObservableObject {
 
         shortBreakCount += 1
         secondsSinceLastBreak = 0
+
+        // Pomodoro cycle tracking
+        if settings.timerMode == .pomodoro {
+            pomodoroCycle += 1
+            stats.recordFocusCycleCompleted()
+        }
+
+        // Stats
+        stats.recordBreakCompleted(isLong: isLong)
 
         // Reset wellness timers after break if enabled
         if settings.resetWellnessAfterBreak {
@@ -223,6 +275,7 @@ class BreakManager: ObservableObject {
         guard case .countdown = state else { return }
         if settings.skipDifficulty == .hardcore { return }
         breaksSkippedCount += 1
+        stats.recordBreakSkipped()
         NotificationCenter.default.post(name: .dismissBreakOverlay, object: nil)
         resetWorkTimer()
     }
@@ -231,6 +284,7 @@ class BreakManager: ObservableObject {
         guard case .onBreak(let isLong) = state else { return }
         if settings.skipDifficulty == .hardcore { return }
         breaksSkippedCount += 1
+        stats.recordBreakSkipped()
         endBreak(isLong: isLong)
     }
 
@@ -246,6 +300,7 @@ class BreakManager: ObservableObject {
         workTimer?.invalidate()
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
         postponeCountToday += 1
+        stats.recordBreakPostponed()
         secondsUntilBreak = seconds
         state = .working
 
@@ -387,6 +442,66 @@ class BreakManager: ObservableObject {
             }
             resetWorkTimer()
         }
+    }
+
+    // MARK: - Scheduled Breaks
+
+    private func checkScheduledBreaks() {
+        let scheduled = settings.scheduledBreaks.filter { $0.enabled }
+        guard !scheduled.isEmpty else { return }
+
+        let now = Calendar.current.dateComponents([.weekday, .hour, .minute], from: Date())
+        guard let weekday = now.weekday, let hour = now.hour, let minute = now.minute else { return }
+
+        let currentMinute = hour * 60 + minute
+
+        // Only check once per minute
+        guard currentMinute != lastScheduledBreakCheckMinute else { return }
+        lastScheduledBreakCheckMinute = currentMinute
+
+        // Reset triggered set at midnight
+        if currentMinute == 0 {
+            lastTriggeredScheduledBreaks.removeAll()
+        }
+
+        for sb in scheduled {
+            let breakMinute = sb.hour * 60 + sb.minute
+            guard breakMinute == currentMinute else { continue }
+            guard sb.activeDays.contains(weekday) else { continue }
+            guard !lastTriggeredScheduledBreaks.contains(sb.id) else { continue }
+
+            lastTriggeredScheduledBreaks.insert(sb.id)
+            // Start a break with the scheduled duration
+            workTimer?.invalidate()
+            reminderDismissTimer?.invalidate()
+            NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
+
+            let isLong = sb.durationSeconds >= 120
+            currentBreakDuration = sb.durationSeconds
+            secondsIntoBreak = 0
+            state = .onBreak(isLong: isLong)
+            currentMessage = sb.name.isEmpty ? randomMessage() : sb.name
+
+            NotificationCenter.default.post(name: .showBreakOverlay, object: isLong)
+
+            breakTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    self?.breakTimerTick(isLong: isLong)
+                }
+            }
+            return
+        }
+    }
+
+    // MARK: - Pomodoro
+
+    var pomodoroLongBreakAfter: Int {
+        settings.pomodoroLongBreakAfter
+    }
+
+    var formattedPomodoroCycle: String {
+        let current = (pomodoroCycle % settings.pomodoroLongBreakAfter) + 1
+        return "Cycle \(current)/\(settings.pomodoroLongBreakAfter)"
     }
 
     // MARK: - Schedule

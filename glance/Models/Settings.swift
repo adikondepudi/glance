@@ -16,6 +16,26 @@ enum MenuBarStyle: String, CaseIterable, Codable {
     case iconAndText = "Icon and Text"
 }
 
+enum MenuBarIcon: String, CaseIterable, Codable {
+    case eye = "eye"
+    case timer = "timer"
+    case sparkles = "sparkles"
+    case leaf = "leaf"
+    case heart = "heart"
+    case circle = "circle"
+}
+
+enum TimerMode: String, CaseIterable, Codable {
+    case interval = "Interval"
+    case pomodoro = "Pomodoro"
+}
+
+enum LockOnBreakMode: String, CaseIterable, Codable {
+    case all = "All Breaks"
+    case longOnly = "Long Breaks Only"
+    case shortOnly = "Short Breaks Only"
+}
+
 enum SmartPauseVideoMode: String, CaseIterable, Codable {
     case frontmostOnly = "Frontmost Only"
     case background = "Running in Background Too"
@@ -98,6 +118,17 @@ class AppSettings: ObservableObject {
     @AppStorage("longBreakInterval") var longBreakInterval: Int = 3 // every N short breaks
     @AppStorage("longBreakDuration") var longBreakDuration: Int = 300 // seconds (5 min)
 
+    // MARK: Timer Mode (Pomodoro)
+    @AppStorage("timerModeRaw") var timerModeRaw: String = TimerMode.interval.rawValue
+    var timerMode: TimerMode {
+        get { TimerMode(rawValue: timerModeRaw) ?? .interval }
+        set { timerModeRaw = newValue.rawValue }
+    }
+    @AppStorage("pomodoroWorkMinutes") var pomodoroWorkMinutes: Int = 25
+    @AppStorage("pomodoroShortBreakSeconds") var pomodoroShortBreakSeconds: Int = 300 // 5 min
+    @AppStorage("pomodoroLongBreakSeconds") var pomodoroLongBreakSeconds: Int = 900 // 15 min
+    @AppStorage("pomodoroLongBreakAfter") var pomodoroLongBreakAfter: Int = 4 // cycles
+
     // MARK: Skip Behavior
     @AppStorage("skipDifficulty") var skipDifficultyRaw: String = SkipDifficulty.casual.rawValue
     var skipDifficulty: SkipDifficulty {
@@ -116,6 +147,11 @@ class AppSettings: ObservableObject {
     @AppStorage("allowEarlyEnd") var allowEarlyEnd: Bool = true
     @AppStorage("earlyEndThreshold") var earlyEndThreshold: Double = 0.7 // 70% through
     @AppStorage("lockOnBreak") var lockOnBreak: Bool = false
+    @AppStorage("lockOnBreakModeRaw") var lockOnBreakModeRaw: String = LockOnBreakMode.all.rawValue
+    var lockOnBreakMode: LockOnBreakMode {
+        get { LockOnBreakMode(rawValue: lockOnBreakModeRaw) ?? .all }
+        set { lockOnBreakModeRaw = newValue.rawValue }
+    }
 
     // MARK: Reminders
     @AppStorage("showPreBreakReminder") var showPreBreakReminder: Bool = true
@@ -127,6 +163,7 @@ class AppSettings: ObservableObject {
     // MARK: Smart Pause
     @AppStorage("detectMeetings") var detectMeetings: Bool = true
     @AppStorage("detectVideoPlayback") var detectVideoPlayback: Bool = true
+    @AppStorage("detectScreenshots") var detectScreenshots: Bool = false
     @AppStorage("videoPlaybackModeRaw") var videoPlaybackModeRaw: String = SmartPauseVideoMode.frontmostOnly.rawValue
     var videoPlaybackMode: SmartPauseVideoMode {
         get { SmartPauseVideoMode(rawValue: videoPlaybackModeRaw) ?? .frontmostOnly }
@@ -160,12 +197,40 @@ class AppSettings: ObservableObject {
     @AppStorage("selectedSound") var selectedSound: String = "chime" // built-in name or path
     @AppStorage("soundVolume") var soundVolume: Double = 0.7
 
+    // MARK: Per-Break-Type Sounds
+    @AppStorage("soundSettingsMigrated") var soundSettingsMigrated: Bool = false
+    @AppStorage("playSoundShortBreakStart") var playSoundShortBreakStart: Bool = false
+    @AppStorage("playSoundShortBreakEnd") var playSoundShortBreakEnd: Bool = true
+    @AppStorage("playSoundLongBreakStart") var playSoundLongBreakStart: Bool = false
+    @AppStorage("playSoundLongBreakEnd") var playSoundLongBreakEnd: Bool = true
+    @AppStorage("selectedSoundShortBreakStart") var selectedSoundShortBreakStart: String = "chime"
+    @AppStorage("selectedSoundShortBreakEnd") var selectedSoundShortBreakEnd: String = "chime"
+    @AppStorage("selectedSoundLongBreakStart") var selectedSoundLongBreakStart: String = "chime"
+    @AppStorage("selectedSoundLongBreakEnd") var selectedSoundLongBreakEnd: String = "chime"
+
     // MARK: General
     @AppStorage("launchAtLogin") var launchAtLogin: Bool = false
     @AppStorage("showMenuBarTimer") var showMenuBarTimer: Bool = true
     @AppStorage("showMenuBarIcon") var showMenuBarIcon: Bool = true
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding: Bool = false
     @AppStorage("askOnIdleReturn") var askOnIdleReturn: Bool = true
+
+    // MARK: Menu Bar Icon
+    @AppStorage("menuBarIconRaw") var menuBarIconRaw: String = MenuBarIcon.eye.rawValue
+    var menuBarIcon: MenuBarIcon {
+        get { MenuBarIcon(rawValue: menuBarIconRaw) ?? .eye }
+        set { menuBarIconRaw = newValue.rawValue }
+    }
+
+    // MARK: Wind Down
+    @AppStorage("windDownEnabled") var windDownEnabled: Bool = false
+    @AppStorage("windDownIntervalMinutes") var windDownIntervalMinutes: Int = 15
+    @AppStorage("windDownMessage") var windDownMessageRaw: String = ""
+    var windDownMessage: String? {
+        get { windDownMessageRaw.isEmpty ? nil : windDownMessageRaw }
+        set { windDownMessageRaw = newValue ?? "" }
+    }
+    @AppStorage("windDownEscalation") var windDownEscalation: Bool = true
 
     // MARK: Menu Bar Style
     @AppStorage("menuBarStyleRaw") var menuBarStyleRaw: String = MenuBarStyle.iconAndText.rawValue
@@ -251,6 +316,38 @@ class AppSettings: ObservableObject {
         get { UserDefaults.standard.stringArray(forKey: "excludedMeetingApps") ?? [] }
         set {
             UserDefaults.standard.set(newValue, forKey: "excludedMeetingApps")
+            objectWillChange.send()
+        }
+    }
+
+    var customReminders: [CustomReminder] {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: "customReminders"),
+                  let reminders = try? JSONDecoder().decode([CustomReminder].self, from: data) else {
+                return []
+            }
+            return reminders
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                UserDefaults.standard.set(data, forKey: "customReminders")
+            }
+            objectWillChange.send()
+        }
+    }
+
+    var scheduledBreaks: [ScheduledBreak] {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: "scheduledBreaks"),
+                  let breaks = try? JSONDecoder().decode([ScheduledBreak].self, from: data) else {
+                return []
+            }
+            return breaks
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                UserDefaults.standard.set(data, forKey: "scheduledBreaks")
+            }
             objectWillChange.send()
         }
     }

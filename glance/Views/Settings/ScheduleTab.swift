@@ -39,6 +39,28 @@ struct ScheduleTab: View {
             }
 
             if schedule.enabled {
+                Section("Wind Down") {
+                    Toggle("Show wind-down reminders outside office hours", isOn: $settings.windDownEnabled)
+
+                    if settings.windDownEnabled {
+                        Picker("Remind every", selection: $settings.windDownIntervalMinutes) {
+                            Text("5 minutes").tag(5)
+                            Text("10 minutes").tag(10)
+                            Text("15 minutes").tag(15)
+                            Text("30 minutes").tag(30)
+                            Text("60 minutes").tag(60)
+                        }
+
+                        TextField("Custom message (optional)", text: $settings.windDownMessageRaw)
+
+                        Toggle("Escalate messages after repeated dismissals", isOn: $settings.windDownEscalation)
+
+                        Text("When working outside your office hours, a gentle full-screen reminder will encourage you to stop working.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section {
                     Text("Glance will only show break reminders during your set schedule. Outside of these hours, the timer will be paused.")
                         .font(.caption)

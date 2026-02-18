@@ -50,6 +50,8 @@ struct SmartPauseTab: View {
                 }
 
                 Toggle("Screen Recording & Sharing", isOn: $settings.detectScreenRecording)
+                Toggle("Screenshot Tools", isOn: $settings.detectScreenshots)
+                    .help("Pauses breaks when screenshot tools like CleanShot X or Shottr are active")
                 Toggle("Fullscreen Gaming", isOn: $settings.detectFullscreenGaming)
             }
 

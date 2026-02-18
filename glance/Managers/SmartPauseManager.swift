@@ -15,6 +15,9 @@ class SmartPauseManager: ObservableObject {
         if settings.detectScreenRecording && isScreenRecording() {
             return "Screen Recording"
         }
+        if settings.detectScreenshots && isScreenshotToolActive() {
+            return "Screenshot Tool"
+        }
         if settings.detectFullscreenGaming && isFullscreenGameRunning() {
             return "Fullscreen Gaming"
         }
@@ -25,6 +28,26 @@ class SmartPauseManager: ObservableObject {
             return "Deep Focus App"
         }
         return nil
+    }
+
+    // MARK: - Screenshot Tool Detection
+
+    private func isScreenshotToolActive() -> Bool {
+        let screenshotBundleIDs = [
+            "com.apple.Screenshot",           // macOS Screenshot
+            "cc.ffitch.shottr",               // Shottr
+            "com.cleanshot.CleanShot-X",      // CleanShot X
+            "com.monosnap.monosnap",          // Monosnap
+        ]
+
+        let runningApps = NSWorkspace.shared.runningApplications
+        for app in runningApps {
+            guard let bundleID = app.bundleIdentifier else { continue }
+            if screenshotBundleIDs.contains(bundleID) && app.isActive {
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: - Meeting Detection

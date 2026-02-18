@@ -3,39 +3,87 @@ import SwiftUI
 struct BreaksTab: View {
     @EnvironmentObject var settings: AppSettings
     @State private var newMessage: String = ""
+    @State private var showingScheduledBreakEditor = false
+    @State private var editingScheduledBreak: ScheduledBreak?
 
     var body: some View {
         Form {
-            Section("Short Break") {
-                Picker("Work for", selection: $settings.shortBreakInterval) {
-                    ForEach([5, 10, 15, 20, 25, 30, 45, 60], id: \.self) { min in
-                        Text("\(min) minutes").tag(min)
+            Section("Timer Mode") {
+                Picker("Mode", selection: Binding(
+                    get: { settings.timerMode },
+                    set: { settings.timerMode = $0 }
+                )) {
+                    ForEach(TimerMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
                     }
                 }
-
-                Picker("Break for", selection: $settings.shortBreakDuration) {
-                    ForEach([10, 15, 20, 30, 45, 60], id: \.self) { sec in
-                        Text("\(sec) seconds").tag(sec)
-                    }
-                }
+                .pickerStyle(.segmented)
             }
 
-            Section("Long Break") {
-                Toggle("Enable long breaks", isOn: $settings.longBreakEnabled)
-
-                if settings.longBreakEnabled {
-                    Picker("After every", selection: $settings.longBreakInterval) {
-                        ForEach(2...6, id: \.self) { n in
-                            Text("\(n) short breaks").tag(n)
+            if settings.timerMode == .pomodoro {
+                Section("Pomodoro Settings") {
+                    Picker("Work duration", selection: $settings.pomodoroWorkMinutes) {
+                        ForEach([15, 20, 25, 30, 35, 40, 45, 50], id: \.self) { min in
+                            Text("\(min) minutes").tag(min)
                         }
                     }
 
-                    Picker("Duration", selection: $settings.longBreakDuration) {
-                        Text("2 minutes").tag(120)
+                    Picker("Short break", selection: $settings.pomodoroShortBreakSeconds) {
                         Text("3 minutes").tag(180)
                         Text("5 minutes").tag(300)
+                        Text("7 minutes").tag(420)
+                        Text("10 minutes").tag(600)
+                    }
+
+                    Picker("Long break", selection: $settings.pomodoroLongBreakSeconds) {
                         Text("10 minutes").tag(600)
                         Text("15 minutes").tag(900)
+                        Text("20 minutes").tag(1200)
+                        Text("30 minutes").tag(1800)
+                    }
+
+                    Picker("Long break after", selection: $settings.pomodoroLongBreakAfter) {
+                        ForEach(2...8, id: \.self) { n in
+                            Text("\(n) cycles").tag(n)
+                        }
+                    }
+
+                    Text("The Pomodoro technique: work for focused intervals, take short breaks between, and a long break after several cycles.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Section("Short Break") {
+                    Picker("Work for", selection: $settings.shortBreakInterval) {
+                        ForEach([5, 10, 15, 20, 25, 30, 45, 60], id: \.self) { min in
+                            Text("\(min) minutes").tag(min)
+                        }
+                    }
+
+                    Picker("Break for", selection: $settings.shortBreakDuration) {
+                        ForEach([10, 15, 20, 30, 45, 60], id: \.self) { sec in
+                            Text("\(sec) seconds").tag(sec)
+                        }
+                    }
+                }
+
+                Section("Long Break") {
+                    Toggle("Enable long breaks", isOn: $settings.longBreakEnabled)
+
+                    if settings.longBreakEnabled {
+                        Picker("After every", selection: $settings.longBreakInterval) {
+                            ForEach(2...6, id: \.self) { n in
+                                Text("\(n) short breaks").tag(n)
+                            }
+                        }
+
+                        Picker("Duration", selection: $settings.longBreakDuration) {
+                            Text("2 minutes").tag(120)
+                            Text("3 minutes").tag(180)
+                            Text("5 minutes").tag(300)
+                            Text("10 minutes").tag(600)
+                            Text("15 minutes").tag(900)
+                        }
                     }
                 }
             }
@@ -60,6 +108,75 @@ struct BreaksTab: View {
                 Toggle("Don't show breaks while I'm typing or dragging", isOn: $settings.delayWhileTyping)
                 Toggle("Let me end break early when nearly done", isOn: $settings.allowEarlyEnd)
                 Toggle("Lock my Mac when a break starts", isOn: $settings.lockOnBreak)
+
+                if settings.lockOnBreak {
+                    Picker("Lock on", selection: Binding(
+                        get: { settings.lockOnBreakMode },
+                        set: { settings.lockOnBreakMode = $0 }
+                    )) {
+                        ForEach(LockOnBreakMode.allCases, id: \.self) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                }
+            }
+
+            Section("Scheduled Breaks") {
+                ForEach(settings.scheduledBreaks) { sb in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(sb.name.isEmpty ? "Untitled" : sb.name)
+                                .font(.callout)
+                            Text(sb.formattedTime)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { sb.enabled },
+                            set: { newValue in
+                                var breaks = settings.scheduledBreaks
+                                if let idx = breaks.firstIndex(where: { $0.id == sb.id }) {
+                                    breaks[idx].enabled = newValue
+                                    settings.scheduledBreaks = breaks
+                                }
+                            }
+                        ))
+                        .labelsHidden()
+                        Button(role: .destructive) {
+                            settings.scheduledBreaks.removeAll { $0.id == sb.id }
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Button("Add Scheduled Break...") {
+                    editingScheduledBreak = ScheduledBreak()
+                    showingScheduledBreakEditor = true
+                }
+
+                Text("Scheduled breaks trigger at specific times regardless of the work timer.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .sheet(isPresented: $showingScheduledBreakEditor) {
+                if let editing = editingScheduledBreak {
+                    ScheduledBreakEditorSheet(scheduledBreak: editing) { saved in
+                        var breaks = settings.scheduledBreaks
+                        if let idx = breaks.firstIndex(where: { $0.id == saved.id }) {
+                            breaks[idx] = saved
+                        } else {
+                            breaks.append(saved)
+                        }
+                        settings.scheduledBreaks = breaks
+                        showingScheduledBreakEditor = false
+                    } onCancel: {
+                        showingScheduledBreakEditor = false
+                    }
+                }
             }
 
             Section("Pre-Break Reminder") {
@@ -140,5 +257,83 @@ struct BreaksTab: View {
         msgs.append(trimmed)
         settings.customMessages = msgs
         newMessage = ""
+    }
+}
+
+// MARK: - Scheduled Break Editor
+
+struct ScheduledBreakEditorSheet: View {
+    @State var scheduledBreak: ScheduledBreak
+    var onSave: (ScheduledBreak) -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Scheduled Break")
+                .font(.headline)
+
+            Form {
+                TextField("Name", text: $scheduledBreak.name)
+
+                DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
+
+                Picker("Duration", selection: $scheduledBreak.durationSeconds) {
+                    Text("20 seconds").tag(20)
+                    Text("1 minute").tag(60)
+                    Text("2 minutes").tag(120)
+                    Text("5 minutes").tag(300)
+                    Text("10 minutes").tag(600)
+                    Text("15 minutes").tag(900)
+                }
+
+                Section("Active Days") {
+                    Toggle("Mon", isOn: dayBinding(2))
+                    Toggle("Tue", isOn: dayBinding(3))
+                    Toggle("Wed", isOn: dayBinding(4))
+                    Toggle("Thu", isOn: dayBinding(5))
+                    Toggle("Fri", isOn: dayBinding(6))
+                    Toggle("Sat", isOn: dayBinding(7))
+                    Toggle("Sun", isOn: dayBinding(1))
+                }
+            }
+            .formStyle(.grouped)
+
+            HStack {
+                Button("Cancel") { onCancel() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Save") { onSave(scheduledBreak) }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal)
+        }
+        .padding()
+        .frame(width: 400, height: 500)
+    }
+
+    private var timeBinding: Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(from: DateComponents(hour: scheduledBreak.hour, minute: scheduledBreak.minute)) ?? Date()
+            },
+            set: { newDate in
+                let components = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                scheduledBreak.hour = components.hour ?? 12
+                scheduledBreak.minute = components.minute ?? 0
+            }
+        )
+    }
+
+    private func dayBinding(_ weekday: Int) -> Binding<Bool> {
+        Binding(
+            get: { scheduledBreak.activeDays.contains(weekday) },
+            set: { active in
+                if active {
+                    scheduledBreak.activeDays.insert(weekday)
+                } else {
+                    scheduledBreak.activeDays.remove(weekday)
+                }
+            }
+        )
     }
 }
