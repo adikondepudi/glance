@@ -73,7 +73,6 @@ struct BreaksTab: View {
                     }
                 }
 
-                Toggle("Show floating countdown near cursor", isOn: $settings.showFloatingCountdown)
                 Toggle("Show overtime nudge", isOn: $settings.showOvertimeNudge)
             }
 

@@ -128,8 +128,6 @@ class BreakManager: ObservableObject {
         state = .countdown(countdownValue)
         currentMessage = randomMessage()
 
-        NotificationCenter.default.post(name: .showBreakCountdown, object: nil)
-
         Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
             Task { @MainActor in
                 guard let self = self else { timer.invalidate(); return }
@@ -202,7 +200,6 @@ class BreakManager: ObservableObject {
         guard case .countdown = state else { return }
         if settings.skipDifficulty == .hardcore { return }
         NotificationCenter.default.post(name: .dismissBreakOverlay, object: nil)
-        NotificationCenter.default.post(name: .dismissBreakCountdown, object: nil)
         resetWorkTimer()
     }
 
@@ -223,7 +220,6 @@ class BreakManager: ObservableObject {
     func postponeBreak(seconds: Int) {
         workTimer?.invalidate()
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
-        NotificationCenter.default.post(name: .dismissBreakCountdown, object: nil)
         secondsUntilBreak = seconds
         state = .working
 
@@ -436,8 +432,6 @@ class BreakManager: ObservableObject {
 extension Notification.Name {
     static let showBreakReminder = Notification.Name("showBreakReminder")
     static let dismissBreakReminder = Notification.Name("dismissBreakReminder")
-    static let showBreakCountdown = Notification.Name("showBreakCountdown")
-    static let dismissBreakCountdown = Notification.Name("dismissBreakCountdown")
     static let showBreakOverlay = Notification.Name("showBreakOverlay")
     static let dismissBreakOverlay = Notification.Name("dismissBreakOverlay")
     static let showPostureReminder = Notification.Name("showPostureReminder")

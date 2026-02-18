@@ -18,7 +18,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var popover: NSPopover!
     private var breakWindowControllers: [BreakWindowController] = []
     private var reminderWindow: ReminderWindowController?
-    private var floatingCountdown: FloatingCountdownController?
     private let breakManager = BreakManager.shared
     private let wellness = WellnessManager.shared
     private var eventMonitor: Any?
@@ -125,8 +124,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissBreakOverlay), name: .dismissBreakOverlay, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowBreakReminder), name: .showBreakReminder, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissBreakReminder), name: .dismissBreakReminder, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleShowCountdown), name: .showBreakCountdown, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleDismissCountdown), name: .dismissBreakCountdown, object: nil)
     }
 
     @objc private func handleShowBreakOverlay(_ notification: Notification) {
@@ -150,18 +147,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func handleDismissBreakReminder() {
         DispatchQueue.main.async { [weak self] in
             self?.dismissReminderWindow()
-        }
-    }
-
-    @objc private func handleShowCountdown() {
-        DispatchQueue.main.async { [weak self] in
-            self?.showFloatingCountdown()
-        }
-    }
-
-    @objc private func handleDismissCountdown() {
-        DispatchQueue.main.async { [weak self] in
-            self?.dismissFloatingCountdown()
         }
     }
 
@@ -195,20 +180,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func dismissReminderWindow() {
         reminderWindow?.close()
         reminderWindow = nil
-    }
-
-    // MARK: - Floating Countdown
-
-    private func showFloatingCountdown() {
-        guard AppSettings.shared.showFloatingCountdown else { return }
-        dismissFloatingCountdown()
-        floatingCountdown = FloatingCountdownController()
-        floatingCountdown?.showWindow(nil)
-    }
-
-    private func dismissFloatingCountdown() {
-        floatingCountdown?.close()
-        floatingCountdown = nil
     }
 
     // MARK: - Global Shortcuts
