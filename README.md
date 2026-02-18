@@ -1,118 +1,69 @@
-# glance
+# Glance
 
-A free, open-source macOS break reminder app that helps reduce eye strain using the 20-20-20 rule. Built with SwiftUI as a native Mac app.
+A free, native macOS app that reminds you to take screen breaks. Built with SwiftUI — no Electron, no subscriptions, no telemetry.
 
-**No licenses. No subscriptions. No telemetry. No bloat.**
+Glance lives in your menu bar and gently nudges you to look away from your screen every 20 minutes, following the [20-20-20 rule](https://www.healthline.com/health/eye-health/20-20-20-rule) recommended by eye care professionals.
+
+## Install
+
+1. Download **Glance.dmg** from [Releases](../../releases/latest)
+2. Open the DMG and drag Glance to your Applications folder
+3. Launch Glance from Applications
+
+> **First launch:** macOS may show a warning because the app isn't notarized. Right-click the app, click **Open**, then click **Open** again in the dialog. You only need to do this once.
+
+Glance runs as a menu bar app — look for the icon in the top-right of your screen. There's no dock icon by design.
 
 ## Features
 
-### Core
-- **20-20-20 Rule** — Configurable short breaks (default: 20 min work, 20 sec break)
-- **Long Breaks** — Optional longer breaks every N short breaks
-- **Full-screen Break Overlay** — Covers all screens with a calming display
-- **Pre-break Notifications** — Gentle heads-up before breaks with postpone/skip/start-now options
-- **Floating Countdown** — A small timer that follows your cursor
-- **Menu Bar App** — Live countdown in the menu bar, quick controls in a popover
+**Breaks** — Configurable short breaks (default: every 20 min) and optional long breaks. Full-screen overlay covers all monitors with a calming background. Pre-break notification gives you a heads-up with options to postpone, skip, or start early.
 
-### Smart Pause
-- **Meeting Detection** — Pauses during video calls (detects camera/mic activity + meeting apps)
-- **Video Playback Detection** — Pauses during video playback (foreground or background)
-- **Screen Recording Detection** — Pauses during screen recording/sharing
-- **Fullscreen Gaming Detection** — Pauses when a game is fullscreen
-- **Deep Focus Apps** — Add specific apps where breaks should be paused
-- **Cooldown Timer** — Configurable delay after an activity ends before breaks resume
+**Smart Pause** — Automatically pauses during meetings (detects camera/mic + meeting apps), video playback, screen recording, fullscreen gaming, and any apps you specify. Configurable cooldown after activities end.
 
-### Scheduling
-- **Office Hours** — Set active days and time range for break reminders
-- **Idle Detection** — Auto-pauses when you're away from the computer
+**Schedule** — Set active days and hours so you're only reminded during work time. Idle detection auto-pauses when you step away.
 
-### Wellness
-- **Blink Reminders** — Periodic notifications to blink
-- **Posture Reminders** — Periodic notifications to check posture
-- **Custom Messages** — Write your own break messages in any language
+**Wellness** — Optional blink and posture reminders via macOS notifications.
 
-### Customization
-- **Skip Difficulty** — Casual (skip anytime), Balanced (delayed skip), Hardcore (no skip)
-- **Break Backgrounds** — Gradients, solid colors, or custom images with presets
-- **Sounds** — Built-in sounds or custom audio files with volume control
-- **Don't Break While Typing** — Delays break until you finish typing
-- **Lock Screen on Break** — Optionally lock Mac when break starts
-- **End Break Early** — Allow ending break when nearly done
+**Customization** — Choose break backgrounds (gradients, solid colors, custom images), sounds, custom messages, and skip difficulty (casual, balanced, or hardcore). Option to lock screen on break or delay breaks while typing.
 
-### Automations
-- **AppleScript Support** — Run AppleScripts when breaks start or end
-- **Shell Scripts** — Run shell commands when breaks start or end
-- **Examples included** — Pause Spotify, change Slack status, enable DND, dim screen
+**Automations** — Run AppleScripts or shell commands when breaks start or end. Pause music, change Slack status, enable Do Not Disturb — whatever you want.
 
-### Keyboard Shortcuts
-- `Cmd+Shift+B` — Start break now
-- `Cmd+Shift+P` — Pause/Resume
-
-### Other
-- **Multi-monitor Support** — Break overlay covers all connected screens
-- **Launch at Login** — Via SMAppService
-- **Fully Native** — Built with SwiftUI + AppKit, no Electron
+**Keyboard Shortcuts** — `Cmd+Shift+B` to start a break, `Cmd+Shift+P` to pause/resume.
 
 ## Requirements
 
-- macOS 13.0+ (Ventura or later)
-- Xcode 15.0+
+macOS 14.0 or later.
 
-## Build
+## Building from Source
 
 ```bash
-# First time only:
+# Install XcodeGen (first time only)
 brew install xcodegen
 
-# Generate and build:
+# Generate Xcode project and build
 xcodegen generate
 ./build.sh
 ```
 
-## Architecture
+To create a distributable DMG:
 
+```bash
+# Optional: brew install create-dmg (for a nicer DMG layout)
+./release.sh
 ```
-glance/
-├── App/
-│   └── GlanceApp.swift             # Entry point, menu bar, window management
-├── Models/
-│   └── Settings.swift              # All settings with UserDefaults persistence
-├── Managers/
-│   ├── BreakManager.swift          # Core state machine and timer logic
-│   ├── SmartPauseManager.swift     # Activity detection (meetings, video, gaming)
-│   ├── IdleDetector.swift          # System idle time via IOKit
-│   ├── AutomationManager.swift     # AppleScript/shell script execution
-│   ├── SoundManager.swift          # Sound playback
-│   └── WellnessManager.swift       # Posture and blink reminders
-├── Views/
-│   ├── MenuBarView.swift           # Menu bar popover UI
-│   ├── BreakOverlayView.swift      # Full-screen break overlay + window controller
-│   ├── BreakReminderView.swift     # Pre-break notification + window controller
-│   ├── FloatingCountdownView.swift # Floating countdown + window controller
-│   └── Settings/
-│       ├── SettingsView.swift      # Tab container
-│       ├── GeneralTab.swift        # General settings
-│       ├── BreaksTab.swift         # Break timing, skip, messages
-│       ├── SmartPauseTab.swift     # Activity detection settings
-│       ├── ScheduleTab.swift       # Office hours
-│       ├── WellnessTab.swift       # Blink & posture reminders
-│       ├── AppearanceTab.swift     # Break backgrounds
-│       ├── SoundsTab.swift         # Sound settings
-│       └── AutomationTab.swift     # Script automations
-├── Info.plist
-└── glance.entitlements
-```
+
+Requires Xcode 15+ with command line tools.
 
 ## Permissions
 
-The app may request:
-- **Accessibility** — For idle detection and global keyboard shortcuts
-- **Automation** — For running AppleScripts
-- **Notifications** — For wellness reminders
+Glance may ask for:
 
-The app does **not** use the camera or microphone directly. It only checks if they are in use by other apps (for meeting detection).
+- **Accessibility** — Idle detection and global keyboard shortcuts
+- **Notifications** — Wellness reminders (blink, posture)
+- **Automation** — Running AppleScripts (only if you use automations)
+
+The app does not access your camera or microphone. It only checks whether they're in use by other apps to detect meetings.
 
 ## License
 
 MIT
-# glance
