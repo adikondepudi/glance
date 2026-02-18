@@ -26,6 +26,9 @@ class BreakManager: ObservableObject {
     @Published var isPausedByUser: Bool = false
     @Published var currentMessage: String = ""
     @Published var overtimeSeconds: Int = 0
+    @Published var secondsSinceLastBreak: Int = 0
+    @Published var breaksSkippedCount: Int = 0
+    @Published var postponeCountToday: Int = 0
 
     private let settings = AppSettings.shared
     private let smartPause = SmartPauseManager.shared
@@ -41,6 +44,8 @@ class BreakManager: ObservableObject {
     private var sessionStartDate = Date()
     private var wasSmartPaused = false
     private var smartPauseCooldownTimer: Timer?
+    private var lastResetDate: Date = Date()
+    private var previousIdleDuration: TimeInterval = 0
 
     private init() {
         resetWorkTimer()
@@ -68,6 +73,9 @@ class BreakManager: ObservableObject {
     private func workTimerTick() {
         guard state == .working || state == .reminding else { return }
 
+        // Daily reset check
+        checkDailyReset()
+
         // Check schedule
         if !isWithinSchedule() {
             state = .outsideSchedule
@@ -78,6 +86,7 @@ class BreakManager: ObservableObject {
 
         secondsUntilBreak -= 1
         totalScreenTime += 1
+        secondsSinceLastBreak += 1
 
         // Pre-break reminder
         if settings.showPreBreakReminder && secondsUntilBreak == settings.preBreakReminderSeconds && state == .working {
@@ -86,6 +95,14 @@ class BreakManager: ObservableObject {
 
         if secondsUntilBreak <= 0 {
             startBreakSequence()
+        }
+    }
+
+    private func checkDailyReset() {
+        if !Calendar.current.isDate(lastResetDate, inSameDayAs: Date()) {
+            lastResetDate = Date()
+            breaksSkippedCount = 0
+            postponeCountToday = 0
         }
     }
 
@@ -124,7 +141,7 @@ class BreakManager: ObservableObject {
         // Determine if long break
         let isLong = settings.longBreakEnabled && (shortBreakCount + 1) % settings.longBreakInterval == 0
 
-        countdownValue = 5
+        countdownValue = settings.countdownDuration
         state = .countdown(countdownValue)
         currentMessage = randomMessage()
 
@@ -189,6 +206,12 @@ class BreakManager: ObservableObject {
         automation.runAutomations(for: trigger)
 
         shortBreakCount += 1
+        secondsSinceLastBreak = 0
+
+        // Reset wellness timers after break if enabled
+        if settings.resetWellnessAfterBreak {
+            WellnessManager.shared.resetTimers()
+        }
 
         NotificationCenter.default.post(name: .dismissBreakOverlay, object: nil)
         resetWorkTimer()
@@ -199,6 +222,7 @@ class BreakManager: ObservableObject {
     func skipBreak() {
         guard case .countdown = state else { return }
         if settings.skipDifficulty == .hardcore { return }
+        breaksSkippedCount += 1
         NotificationCenter.default.post(name: .dismissBreakOverlay, object: nil)
         resetWorkTimer()
     }
@@ -206,6 +230,7 @@ class BreakManager: ObservableObject {
     func skipCurrentBreak() {
         guard case .onBreak(let isLong) = state else { return }
         if settings.skipDifficulty == .hardcore { return }
+        breaksSkippedCount += 1
         endBreak(isLong: isLong)
     }
 
@@ -220,6 +245,7 @@ class BreakManager: ObservableObject {
     func postponeBreak(seconds: Int) {
         workTimer?.invalidate()
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
+        postponeCountToday += 1
         secondsUntilBreak = seconds
         state = .working
 
@@ -267,6 +293,24 @@ class BreakManager: ObservableObject {
     func resumeByUser() {
         isPausedByUser = false
         resetWorkTimer()
+    }
+
+    func snoozeBreak(extraSeconds: Int) {
+        guard case .onBreak = state else { return }
+        currentBreakDuration += extraSeconds
+        postponeCountToday += 1
+    }
+
+    var canPostpone: Bool {
+        let max = settings.maxPostponesPerDay
+        if max == 0 { return true } // unlimited
+        return postponeCountToday < max
+    }
+
+    var formattedTimeSinceLastBreak: String {
+        let mins = secondsSinceLastBreak / 60
+        if mins < 1 { return "Just started" }
+        return "\(mins)m without a break"
     }
 
     // MARK: - Smart Pause
@@ -329,11 +373,18 @@ class BreakManager: ObservableObject {
         let idleTime = idleDetector.systemIdleTime
         if idleTime >= TimeInterval(settings.idleThresholdSeconds) {
             if state != .idle {
+                previousIdleDuration = 0
                 workTimer?.invalidate()
                 state = .idle
             }
+            previousIdleDuration = idleTime
         } else if state == .idle {
-            // Returned from idle — reset timer
+            // Returned from idle
+            let breakDuration = Double(settings.shortBreakDuration)
+            if settings.askOnIdleReturn && previousIdleDuration >= breakDuration {
+                // Show "did you take a break?" prompt
+                NotificationCenter.default.post(name: .showIdleReturnPrompt, object: nil)
+            }
             resetWorkTimer()
         }
     }
@@ -350,8 +401,21 @@ class BreakManager: ObservableObject {
         guard schedule.activeDays.contains(weekday) else { return false }
 
         let currentMinutes = hour * 60 + minute
-        let startMinutes = schedule.startHour * 60 + schedule.startMinute
-        let endMinutes = schedule.endHour * 60 + schedule.endMinute
+        let startMinutes: Int
+        let endMinutes: Int
+
+        if schedule.usePerDaySchedule, let daySchedule = schedule.perDaySchedules[weekday] {
+            startMinutes = daySchedule.startHour * 60 + daySchedule.startMinute
+            endMinutes = daySchedule.endHour * 60 + daySchedule.endMinute
+        } else {
+            startMinutes = schedule.startHour * 60 + schedule.startMinute
+            endMinutes = schedule.endHour * 60 + schedule.endMinute
+        }
+
+        // Handle past-midnight schedules (e.g. 22:00 - 02:00)
+        if endMinutes <= startMinutes {
+            return currentMinutes >= startMinutes || currentMinutes < endMinutes
+        }
 
         return currentMinutes >= startMinutes && currentMinutes < endMinutes
     }
@@ -436,4 +500,5 @@ extension Notification.Name {
     static let dismissBreakOverlay = Notification.Name("dismissBreakOverlay")
     static let showPostureReminder = Notification.Name("showPostureReminder")
     static let showBlinkReminder = Notification.Name("showBlinkReminder")
+    static let showIdleReturnPrompt = Notification.Name("showIdleReturnPrompt")
 }

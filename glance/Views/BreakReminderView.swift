@@ -18,6 +18,24 @@ struct BreakReminderView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+
+                // Time since last break (#1)
+                Text(breakManager.formattedTimeSinceLastBreak)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                // Breaks skipped warning (#2, #16)
+                if breakManager.breaksSkippedCount > 0 {
+                    if breakManager.breaksSkippedCount >= 3 {
+                        Text("You've skipped \(breakManager.breaksSkippedCount) breaks. Consider taking one.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else {
+                        Text("\(breakManager.breaksSkippedCount) break\(breakManager.breaksSkippedCount == 1 ? "" : "s") skipped")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             Spacer()
@@ -26,9 +44,11 @@ struct BreakReminderView: View {
                 Button("+1m") {
                     breakManager.postponeBreak(seconds: 60)
                 }
+                .disabled(!breakManager.canPostpone)
                 Button("+5m") {
                     breakManager.postponeBreak(seconds: 300)
                 }
+                .disabled(!breakManager.canPostpone)
                 Button("Skip") {
                     breakManager.skipBreak()
                 }
@@ -43,7 +63,7 @@ struct BreakReminderView: View {
             .controlSize(.small)
         }
         .padding(16)
-        .frame(width: 440)
+        .frame(width: 480)
         .fixedSize(horizontal: false, vertical: true)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 4)

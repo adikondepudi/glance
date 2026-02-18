@@ -18,16 +18,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var popover: NSPopover!
     private var breakWindowControllers: [BreakWindowController] = []
     private var reminderWindow: ReminderWindowController?
+    private var onboardingWindow: NSWindow?
+    private var idleReturnWindow: NSWindow?
     private let breakManager = BreakManager.shared
     private let wellness = WellnessManager.shared
+    private let settings = AppSettings.shared
     private var eventMonitor: Any?
     private var clickMonitor: Any?
+    private var escapeMonitor: Any?
+    private var lastEscapeTime: Date?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
         setupNotificationObservers()
         wellness.start()
         setupGlobalShortcuts()
+
+        // Onboarding (#11)
+        if !settings.hasCompletedOnboarding {
+            showOnboarding()
+        }
     }
 
     // MARK: - Menu Bar
@@ -62,7 +72,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     private func updateMenuBarTitle() {
-        guard AppSettings.shared.showMenuBarTimer else {
+        let style = settings.menuBarStyle
+
+        // Icon visibility (#8, #15)
+        if style == .textOnly || !settings.showMenuBarIcon {
+            statusItem.button?.image = nil
+        } else {
+            if statusItem.button?.image == nil {
+                let img = NSImage(systemSymbolName: "eye", accessibilityDescription: "glance")
+                img?.size = NSSize(width: 16, height: 16)
+                statusItem.button?.image = img
+                statusItem.button?.imagePosition = .imageLeading
+            }
+        }
+
+        // Text visibility (#15)
+        if style == .iconOnly {
+            statusItem.button?.title = ""
+            return
+        }
+
+        guard settings.showMenuBarTimer else {
             statusItem.button?.title = ""
             return
         }
@@ -124,6 +154,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissBreakOverlay), name: .dismissBreakOverlay, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowBreakReminder), name: .showBreakReminder, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissBreakReminder), name: .dismissBreakReminder, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleShowIdleReturnPrompt), name: .showIdleReturnPrompt, object: nil)
     }
 
     @objc private func handleShowBreakOverlay(_ notification: Notification) {
@@ -160,6 +191,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             controller.showWindow(nil)
             breakWindowControllers.append(controller)
         }
+
+        // Double-escape to skip (#4)
+        installEscapeMonitor()
     }
 
     private func dismissBreakOverlay() {
@@ -167,6 +201,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             controller.close()
         }
         breakWindowControllers.removeAll()
+        removeEscapeMonitor()
+    }
+
+    // MARK: - Double Escape (#4)
+
+    private func installEscapeMonitor() {
+        removeEscapeMonitor()
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return event } // 53 = Escape
+            let now = Date()
+            if let last = self?.lastEscapeTime, now.timeIntervalSince(last) < 1.0 {
+                // Double escape detected
+                Task { @MainActor in
+                    self?.breakManager.skipCurrentBreak()
+                }
+                self?.lastEscapeTime = nil
+            } else {
+                self?.lastEscapeTime = now
+            }
+            return event
+        }
+    }
+
+    private func removeEscapeMonitor() {
+        if let monitor = escapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            escapeMonitor = nil
+        }
+        lastEscapeTime = nil
     }
 
     // MARK: - Reminder Window
@@ -198,10 +261,64 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     } else {
                         self?.breakManager.pauseByUser()
                     }
+                case 37: // L key — Start long break now (#14)
+                    self?.breakManager.startLongBreakNow()
+                case 18: // 1 key — Postpone 1 minute (#14)
+                    self?.breakManager.postponeBreak(seconds: 60)
+                case 23: // 5 key — Postpone 5 minutes (#14)
+                    self?.breakManager.postponeBreak(seconds: 300)
                 default:
                     break
                 }
             }
         }
+    }
+
+    // MARK: - Idle Return Prompt (#10)
+
+    @objc private func handleShowIdleReturnPrompt() {
+        DispatchQueue.main.async { [weak self] in
+            self?.showIdleReturnAlert()
+        }
+    }
+
+    private func showIdleReturnAlert() {
+        guard idleReturnWindow == nil else { return }
+
+        let alert = NSAlert()
+        alert.messageText = "Did you take a break while away?"
+        alert.informativeText = "You were away from your computer long enough for a break."
+        alert.addButton(withTitle: "Yes, I rested")
+        alert.addButton(withTitle: "No, I didn't")
+        alert.alertStyle = .informational
+
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
+            // "No" — don't count as break, timer already reset
+            // Could track this, but timer is already reset in checkIdle
+        }
+        // "Yes" — timer already reset normally
+    }
+
+    // MARK: - Onboarding (#11)
+
+    private func showOnboarding() {
+        let onboardingView = OnboardingView(onComplete: { [weak self] in
+            self?.onboardingWindow?.close()
+            self?.onboardingWindow = nil
+        })
+        .environmentObject(settings)
+
+        let hostingController = NSHostingController(rootView: onboardingView)
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = "Welcome to Glance"
+        window.styleMask = [.titled, .closable]
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+
+        onboardingWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }

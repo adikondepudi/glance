@@ -94,6 +94,13 @@ struct MenuBarView: View {
             }
             .font(.caption)
             .foregroundStyle(.tertiary)
+
+            // Time since last break (#1)
+            if case .working = breakManager.state {
+                Text(breakManager.formattedTimeSinceLastBreak)
+                    .font(.caption2)
+                    .foregroundStyle(.quaternary)
+            }
         }
         .padding()
     }
@@ -129,10 +136,16 @@ struct MenuBarView: View {
                 .controlSize(.large)
 
                 HStack(spacing: 6) {
-                    Button("Pause") {
-                        breakManager.pauseByUser()
+                    Menu("Pause") {
+                        Button("Pause for 5 min") { breakManager.pauseTemporarily(seconds: 300) }
+                        Button("Pause for 15 min") { breakManager.pauseTemporarily(seconds: 900) }
+                        Button("Pause for 30 min") { breakManager.pauseTemporarily(seconds: 1800) }
+                        Button("Pause for 1 hour") { breakManager.pauseTemporarily(seconds: 3600) }
+                        Divider()
+                        Button("Pause indefinitely") { breakManager.pauseByUser() }
                     }
-                    .buttonStyle(.bordered)
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
 
                     if settings.longBreakEnabled && !isOnBreakOrCountdown {
                         Button("Long Break") {

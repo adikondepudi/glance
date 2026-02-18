@@ -73,7 +73,27 @@ struct BreaksTab: View {
                     }
                 }
 
+                Picker("Countdown duration", selection: $settings.countdownDuration) {
+                    Text("5 seconds").tag(5)
+                    Text("10 seconds").tag(10)
+                }
+
                 Toggle("Show overtime nudge", isOn: $settings.showOvertimeNudge)
+            }
+
+            Section("Postpone Limits") {
+                Picker("Max postpones per day", selection: $settings.maxPostponesPerDay) {
+                    Text("Unlimited").tag(0)
+                    Text("3").tag(3)
+                    Text("5").tag(5)
+                    Text("10").tag(10)
+                }
+
+                if settings.maxPostponesPerDay > 0 {
+                    Text("After reaching the limit, postpone and snooze buttons will be disabled for the rest of the day.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Custom Messages") {

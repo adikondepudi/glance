@@ -71,6 +71,13 @@ struct WellnessTab: View {
                 }
             }
 
+            Section("After Breaks") {
+                Toggle("Reset wellness reminders after completing a break", isOn: $settings.resetWellnessAfterBreak)
+                Text("When enabled, blink and posture reminder timers restart after each break so you won't get a reminder right after resting.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Tips") {
                 VStack(alignment: .leading, spacing: 8) {
                     tipRow(icon: "eye", text: "Follow the 20-20-20 rule: Every 20 minutes, look at something 20 feet away for 20 seconds.")

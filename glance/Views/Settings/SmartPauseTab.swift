@@ -1,15 +1,40 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import CoreAudio
 
 struct SmartPauseTab: View {
     @EnvironmentObject var settings: AppSettings
     @State private var showingAppPicker = false
+    @State private var availableMics: [(id: String, name: String)] = []
 
     var body: some View {
         Form {
             Section("Automatic Pause") {
                 Toggle("Meetings or Calls", isOn: $settings.detectMeetings)
                     .help("Pauses breaks when camera or microphone is in use during a meeting app")
+
+                if settings.detectMeetings && !availableMics.isEmpty {
+                    Section("Microphone Devices") {
+                        Text("Uncheck devices you want to ignore for meeting detection.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        ForEach(availableMics, id: \.id) { mic in
+                            Toggle(mic.name, isOn: Binding(
+                                get: { !settings.excludedMicDevices.contains(mic.id) },
+                                set: { included in
+                                    var excluded = settings.excludedMicDevices
+                                    if included {
+                                        excluded.removeAll { $0 == mic.id }
+                                    } else {
+                                        excluded.append(mic.id)
+                                    }
+                                    settings.excludedMicDevices = excluded
+                                }
+                            ))
+                        }
+                    }
+                }
 
                 Toggle("Video Playback", isOn: $settings.detectVideoPlayback)
 
@@ -96,6 +121,7 @@ struct SmartPauseTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { loadMicDevices() }
     }
 
     private func pickApp() {
@@ -125,5 +151,63 @@ struct SmartPauseTab: View {
     private func appIcon(for bundleID: String) -> NSImage? {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
         return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
+    private func loadMicDevices() {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var dataSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &dataSize) == noErr else { return }
+
+        let deviceCount = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        var deviceIDs = [AudioDeviceID](repeating: 0, count: deviceCount)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &dataSize, &deviceIDs) == noErr else { return }
+
+        var mics: [(id: String, name: String)] = []
+
+        for deviceID in deviceIDs {
+            // Check if device has input channels
+            var inputAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreamConfiguration,
+                mScope: kAudioObjectPropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+
+            var inputSize: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(deviceID, &inputAddress, 0, nil, &inputSize) == noErr else { continue }
+            guard inputSize > 0 else { continue }
+
+            let bufferListPtr = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: 1)
+            defer { bufferListPtr.deallocate() }
+            guard AudioObjectGetPropertyData(deviceID, &inputAddress, 0, nil, &inputSize, bufferListPtr) == noErr else { continue }
+
+            let bufferList = bufferListPtr.pointee
+            guard bufferList.mNumberBuffers > 0, bufferList.mBuffers.mNumberChannels > 0 else { continue }
+
+            // Get device name
+            var nameAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceNameCFString,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+
+            var name: CFString = "" as CFString
+            var nameSize = UInt32(MemoryLayout<CFString>.size)
+            guard AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &nameSize, &name) == noErr else { continue }
+
+            mics.append((id: String(deviceID), name: name as String))
+        }
+
+        availableMics = mics
+    }
+}
+
+extension SmartPauseTab {
+    func onAppearLoad() -> some View {
+        self.onAppear { loadMicDevices() }
     }
 }

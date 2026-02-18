@@ -72,44 +72,67 @@ class SmartPauseManager: ObservableObject {
     }
 
     private func isMicActive() -> Bool {
-        // Use AudioObjectGetPropertyData to check if any input device is active
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        let excludedDevices = Set(settings.excludedMicDevices)
+
+        // Get all audio devices
+        var devicesAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var deviceID: AudioDeviceID = 0
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var dataSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &devicesAddress, 0, nil, &dataSize) == noErr else { return false }
 
-        let status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0, nil,
-            &size,
-            &deviceID
-        )
+        let deviceCount = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        var deviceIDs = [AudioDeviceID](repeating: 0, count: deviceCount)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &devicesAddress, 0, nil, &dataSize, &deviceIDs) == noErr else { return false }
 
-        guard status == noErr else { return false }
+        for deviceID in deviceIDs {
+            // Skip excluded devices
+            if excludedDevices.contains(String(deviceID)) { continue }
 
-        // Check if the device is running
-        var isRunning: UInt32 = 0
-        var runningSize = UInt32(MemoryLayout<UInt32>.size)
-        var runningAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
-            mScope: kAudioObjectPropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
+            // Check if device has input channels
+            var inputAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreamConfiguration,
+                mScope: kAudioObjectPropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
 
-        let runStatus = AudioObjectGetPropertyData(
-            deviceID,
-            &runningAddress,
-            0, nil,
-            &runningSize,
-            &isRunning
-        )
+            var inputSize: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(deviceID, &inputAddress, 0, nil, &inputSize) == noErr else { continue }
+            guard inputSize > 0 else { continue }
 
-        return runStatus == noErr && isRunning != 0
+            let bufferListPtr = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: 1)
+            defer { bufferListPtr.deallocate() }
+            guard AudioObjectGetPropertyData(deviceID, &inputAddress, 0, nil, &inputSize, bufferListPtr) == noErr else { continue }
+
+            let bufferList = bufferListPtr.pointee
+            guard bufferList.mNumberBuffers > 0, bufferList.mBuffers.mNumberChannels > 0 else { continue }
+
+            // Check if running
+            var isRunning: UInt32 = 0
+            var runningSize = UInt32(MemoryLayout<UInt32>.size)
+            var runningAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+                mScope: kAudioObjectPropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+
+            let runStatus = AudioObjectGetPropertyData(
+                deviceID,
+                &runningAddress,
+                0, nil,
+                &runningSize,
+                &isRunning
+            )
+
+            if runStatus == noErr && isRunning != 0 {
+                return true
+            }
+        }
+
+        return false
     }
 
     // MARK: - Screen Recording Detection

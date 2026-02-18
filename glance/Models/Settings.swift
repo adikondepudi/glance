@@ -10,6 +10,12 @@ enum SkipDifficulty: String, CaseIterable, Codable {
     case hardcore = "Hardcore"
 }
 
+enum MenuBarStyle: String, CaseIterable, Codable {
+    case iconOnly = "Icon Only"
+    case textOnly = "Text Only"
+    case iconAndText = "Icon and Text"
+}
+
 enum SmartPauseVideoMode: String, CaseIterable, Codable {
     case frontmostOnly = "Frontmost Only"
     case background = "Running in Background Too"
@@ -28,6 +34,13 @@ struct DeepFocusApp: Codable, Identifiable, Equatable {
     var mode: DeepFocusMode
 }
 
+struct DaySchedule: Codable, Equatable {
+    var startHour: Int = 9
+    var startMinute: Int = 0
+    var endHour: Int = 18
+    var endMinute: Int = 0
+}
+
 struct OfficeHoursSchedule: Codable {
     var enabled: Bool = false
     var activeDays: Set<Int> = [2, 3, 4, 5, 6] // Mon-Fri (Calendar weekday: Sun=1)
@@ -35,6 +48,8 @@ struct OfficeHoursSchedule: Codable {
     var startMinute: Int = 0
     var endHour: Int = 18
     var endMinute: Int = 0
+    var usePerDaySchedule: Bool = false
+    var perDaySchedules: [Int: DaySchedule] = [:] // weekday -> schedule
 }
 
 struct AutomationAction: Codable, Identifiable {
@@ -90,6 +105,12 @@ class AppSettings: ObservableObject {
         set { skipDifficultyRaw = newValue.rawValue }
     }
 
+    // MARK: Countdown
+    @AppStorage("countdownDuration") var countdownDuration: Int = 5
+
+    // MARK: Postpone Limits
+    @AppStorage("maxPostponesPerDay") var maxPostponesPerDay: Int = 0 // 0 = unlimited
+
     // MARK: Break Options
     @AppStorage("delayWhileTyping") var delayWhileTyping: Bool = true
     @AppStorage("allowEarlyEnd") var allowEarlyEnd: Bool = true
@@ -124,6 +145,7 @@ class AppSettings: ObservableObject {
     @AppStorage("blinkReminderInterval") var blinkReminderInterval: Int = 10 // minutes
     @AppStorage("postureReminderEnabled") var postureReminderEnabled: Bool = false
     @AppStorage("postureReminderInterval") var postureReminderInterval: Int = 30 // minutes
+    @AppStorage("resetWellnessAfterBreak") var resetWellnessAfterBreak: Bool = true
 
     // MARK: Appearance
     @AppStorage("breakBackgroundStyle") var breakBackgroundStyle: String = "gradient" // gradient, solid, image
@@ -141,6 +163,16 @@ class AppSettings: ObservableObject {
     // MARK: General
     @AppStorage("launchAtLogin") var launchAtLogin: Bool = false
     @AppStorage("showMenuBarTimer") var showMenuBarTimer: Bool = true
+    @AppStorage("showMenuBarIcon") var showMenuBarIcon: Bool = true
+    @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding: Bool = false
+    @AppStorage("askOnIdleReturn") var askOnIdleReturn: Bool = true
+
+    // MARK: Menu Bar Style
+    @AppStorage("menuBarStyleRaw") var menuBarStyleRaw: String = MenuBarStyle.iconAndText.rawValue
+    var menuBarStyle: MenuBarStyle {
+        get { MenuBarStyle(rawValue: menuBarStyleRaw) ?? .iconAndText }
+        set { menuBarStyleRaw = newValue.rawValue }
+    }
 
     // MARK: Complex Settings (JSON-encoded in UserDefaults)
 

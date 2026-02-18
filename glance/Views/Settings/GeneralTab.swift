@@ -16,6 +16,23 @@ struct GeneralTab: View {
 
             Section("Menu Bar") {
                 Toggle("Show countdown timer in menu bar", isOn: $settings.showMenuBarTimer)
+
+                Toggle("Show menu bar icon", isOn: $settings.showMenuBarIcon)
+
+                Picker("Menu bar display", selection: Binding(
+                    get: { settings.menuBarStyle },
+                    set: { settings.menuBarStyle = $0 }
+                )) {
+                    ForEach(MenuBarStyle.allCases, id: \.self) { style in
+                        Text(style.rawValue).tag(style)
+                    }
+                }
+
+                if !settings.showMenuBarIcon && settings.menuBarStyle == .textOnly {
+                    Text("Use keyboard shortcuts to control Glance if the icon is hidden.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
 
             Section("Idle Detection") {
@@ -28,6 +45,8 @@ struct GeneralTab: View {
                         Text("3 minutes").tag(180)
                         Text("5 minutes").tag(300)
                     }
+
+                    Toggle("Ask if I took a break when returning from idle", isOn: $settings.askOnIdleReturn)
                 }
             }
 
@@ -36,8 +55,20 @@ struct GeneralTab: View {
                     Text("⌘⇧B")
                         .font(.system(.body, design: .monospaced))
                 }
+                LabeledContent("Start long break") {
+                    Text("⌘⇧L")
+                        .font(.system(.body, design: .monospaced))
+                }
                 LabeledContent("Pause / Resume") {
                     Text("⌘⇧P")
+                        .font(.system(.body, design: .monospaced))
+                }
+                LabeledContent("Postpone 1 min") {
+                    Text("⌘⇧1")
+                        .font(.system(.body, design: .monospaced))
+                }
+                LabeledContent("Postpone 5 min") {
+                    Text("⌘⇧5")
                         .font(.system(.body, design: .monospaced))
                 }
             }

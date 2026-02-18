@@ -61,16 +61,34 @@ struct BreakOverlayView: View {
 
                 Spacer()
 
-                // Skip / End Early
+                // Skip warning (#16)
+                if breakManager.breaksSkippedCount >= 3 {
+                    Text("You've skipped \(breakManager.breaksSkippedCount) breaks. Consider resting your eyes.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.orange.opacity(0.8))
+                        .padding(.bottom, 8)
+                }
+
+                // Snooze / Skip / End Early (#9, #17)
                 if breakManager.canSkip || breakManager.canEndEarly {
                     Group {
                         if breakManager.canEndEarly {
                             overlayButton("End Break") {
                                 breakManager.endBreakEarly()
                             }
-                        } else if breakManager.canSkip && showSkipButton {
-                            overlayButton("Skip") {
-                                breakManager.skipCurrentBreak()
+                        } else if showSkipButton {
+                            HStack(spacing: 12) {
+                                if breakManager.canPostpone {
+                                    overlayButton("+1m") {
+                                        breakManager.snoozeBreak(extraSeconds: 60)
+                                    }
+                                    overlayButton("+5m") {
+                                        breakManager.snoozeBreak(extraSeconds: 300)
+                                    }
+                                }
+                                overlayButton("Skip") {
+                                    breakManager.skipCurrentBreak()
+                                }
                             }
                         }
                     }
