@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Combine
 
 @MainActor
 class WindDownManager: ObservableObject {
@@ -10,8 +11,14 @@ class WindDownManager: ObservableObject {
     private let settings = AppSettings.shared
     private var windDownTimer: Timer?
     private var isActive = false
+    private var settingsObserver: AnyCancellable?
+    private var lastWindDownEnabled = false
+    private var lastWindDownInterval = 0
 
-    private init() {}
+    private init() {
+        lastWindDownEnabled = settings.windDownEnabled
+        lastWindDownInterval = settings.windDownIntervalMinutes
+    }
 
     func start() {
         NotificationCenter.default.addObserver(
@@ -32,6 +39,41 @@ class WindDownManager: ObservableObject {
             Task { @MainActor in
                 self?.stop()
             }
+        }
+
+        observeSettingsChanges()
+    }
+
+    private func observeSettingsChanges() {
+        settingsObserver = settings.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.handleSettingsChanged()
+                }
+            }
+    }
+
+    private func handleSettingsChanged() {
+        let newEnabled = settings.windDownEnabled
+        let newInterval = settings.windDownIntervalMinutes
+
+        let enabledChanged = newEnabled != lastWindDownEnabled
+        let intervalChanged = newInterval != lastWindDownInterval
+
+        lastWindDownEnabled = newEnabled
+        lastWindDownInterval = newInterval
+
+        if enabledChanged {
+            if newEnabled && BreakManager.shared.state == .outsideSchedule {
+                dismissCount = 0
+                startWindDownCycle()
+            } else if !newEnabled {
+                stop()
+            }
+        } else if intervalChanged && isActive {
+            // Restart cycle with new interval
+            startWindDownCycle()
         }
     }
 

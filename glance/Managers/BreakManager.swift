@@ -50,11 +50,57 @@ class BreakManager: ObservableObject {
     private var previousIdleDuration: TimeInterval = 0
     private var lastTriggeredScheduledBreaks: Set<UUID> = []
     private var lastScheduledBreakCheckMinute: Int = -1
+    private var settingsObserver: AnyCancellable?
+    private var lastTimerMode: String = ""
+    private var lastWorkInterval: Int = 0
+    private var lastPomodoroWork: Int = 0
 
     private init() {
+        // Snapshot current settings so we can detect changes
+        lastTimerMode = settings.timerModeRaw
+        lastWorkInterval = settings.shortBreakInterval
+        lastPomodoroWork = settings.pomodoroWorkMinutes
+
         resetWorkTimer()
         startIdleMonitoring()
         startSmartPauseMonitoring()
+        observeSettingsChanges()
+    }
+
+    private func observeSettingsChanges() {
+        settingsObserver = settings.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                // Defer to next run loop so the new values are committed
+                DispatchQueue.main.async {
+                    self?.handleSettingsChanged()
+                }
+            }
+    }
+
+    private func handleSettingsChanged() {
+        let newTimerMode = settings.timerModeRaw
+        let newWorkInterval = settings.shortBreakInterval
+        let newPomodoroWork = settings.pomodoroWorkMinutes
+
+        let modeChanged = newTimerMode != lastTimerMode
+        let intervalChanged = newWorkInterval != lastWorkInterval
+        let pomodoroChanged = newPomodoroWork != lastPomodoroWork
+
+        lastTimerMode = newTimerMode
+        lastWorkInterval = newWorkInterval
+        lastPomodoroWork = newPomodoroWork
+
+        // Only reset if we're in the working state and a timing setting actually changed
+        guard state == .working || state == .reminding else { return }
+
+        if modeChanged {
+            resetWorkTimer()
+        } else if settings.timerMode == .pomodoro && pomodoroChanged {
+            resetWorkTimer()
+        } else if settings.timerMode == .interval && intervalChanged {
+            resetWorkTimer()
+        }
     }
 
     // MARK: - Work Timer
