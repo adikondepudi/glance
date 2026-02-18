@@ -12,8 +12,16 @@ class StatsManager: ObservableObject {
     private var needsSave = false
     private var screenTimeTimer: Timer?
 
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
     private var statsDirectory: URL {
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        guard let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return fileManager.temporaryDirectory.appendingPathComponent("com.glance.app/stats")
+        }
         return appSupport.appendingPathComponent("com.glance.app/stats")
     }
 
@@ -78,9 +86,17 @@ class StatsManager: ObservableObject {
         case .today:
             days = [todayStats]
         case .week:
-            days = loadDays(from: calendar.date(byAdding: .day, value: -6, to: today)!, to: today)
+            guard let weekStart = calendar.date(byAdding: .day, value: -6, to: today) else {
+                days = [todayStats]
+                break
+            }
+            days = loadDays(from: weekStart, to: today)
         case .month:
-            days = loadDays(from: calendar.date(byAdding: .day, value: -29, to: today)!, to: today)
+            guard let monthStart = calendar.date(byAdding: .day, value: -29, to: today) else {
+                days = [todayStats]
+                break
+            }
+            days = loadDays(from: monthStart, to: today)
         }
 
         return PeriodStats(days: days)
@@ -126,7 +142,8 @@ class StatsManager: ObservableObject {
             } else if let day = loadDay(dateStr) {
                 days.append(day)
             }
-            current = calendar.date(byAdding: .day, value: 1, to: current)!
+            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+            current = next
         }
 
         return days
@@ -154,8 +171,6 @@ class StatsManager: ObservableObject {
     }
 
     static func dateString(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        return dateFormatter.string(from: date)
     }
 }

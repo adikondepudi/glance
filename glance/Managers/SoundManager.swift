@@ -36,7 +36,7 @@ class SoundManager {
         if let systemPath = Self.systemSoundMap[soundName] {
             soundURL = URL(fileURLWithPath: systemPath)
         } else if soundName.hasPrefix("/") || soundName.hasPrefix("~") {
-            let expanded = NSString(string: soundName).expandingTildeInPath
+            let expanded = (NSString(string: soundName).expandingTildeInPath as NSString).standardizingPath
             soundURL = URL(fileURLWithPath: expanded)
         }
 

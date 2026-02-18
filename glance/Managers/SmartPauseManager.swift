@@ -9,22 +9,24 @@ class SmartPauseManager: ObservableObject {
     private let settings = AppSettings.shared
 
     func currentPauseReason() -> String? {
-        if settings.detectMeetings && isMeetingActive() {
+        let runningApps = NSWorkspace.shared.runningApplications
+
+        if settings.detectMeetings && isMeetingActive(runningApps) {
             return "Meeting or Call"
         }
-        if settings.detectScreenRecording && isScreenRecording() {
+        if settings.detectScreenRecording && isScreenRecording(runningApps) {
             return "Screen Recording"
         }
-        if settings.detectScreenshots && isScreenshotToolActive() {
+        if settings.detectScreenshots && isScreenshotToolActive(runningApps) {
             return "Screenshot Tool"
         }
         if settings.detectFullscreenGaming && isFullscreenGameRunning() {
             return "Fullscreen Gaming"
         }
-        if settings.detectVideoPlayback && isVideoPlaying() {
+        if settings.detectVideoPlayback && isVideoPlaying(runningApps) {
             return "Video Playback"
         }
-        if isDeepFocusAppActive() {
+        if isDeepFocusAppActive(runningApps) {
             return "Deep Focus App"
         }
         return nil
@@ -32,7 +34,7 @@ class SmartPauseManager: ObservableObject {
 
     // MARK: - Screenshot Tool Detection
 
-    private func isScreenshotToolActive() -> Bool {
+    private func isScreenshotToolActive(_ runningApps: [NSRunningApplication]) -> Bool {
         let screenshotBundleIDs = [
             "com.apple.Screenshot",           // macOS Screenshot
             "cc.ffitch.shottr",               // Shottr
@@ -40,7 +42,6 @@ class SmartPauseManager: ObservableObject {
             "com.monosnap.monosnap",          // Monosnap
         ]
 
-        let runningApps = NSWorkspace.shared.runningApplications
         for app in runningApps {
             guard let bundleID = app.bundleIdentifier else { continue }
             if screenshotBundleIDs.contains(bundleID) && app.isActive {
@@ -52,22 +53,22 @@ class SmartPauseManager: ObservableObject {
 
     // MARK: - Meeting Detection
 
-    private func isMeetingActive() -> Bool {
-        return isCameraActive() || isMicrophoneActiveForMeeting()
+    private func isMeetingActive(_ runningApps: [NSRunningApplication]) -> Bool {
+        return isCameraActive(runningApps) || isMicrophoneActiveForMeeting(runningApps)
     }
 
-    private func isCameraActive() -> Bool {
+    private func isCameraActive(_ runningApps: [NSRunningApplication]) -> Bool {
         // Check if any meeting app is running with an active microphone
         // (camera usage implies mic usage in video calls)
-        return isAnyMeetingAppRunning() && isMicActive()
+        return isAnyMeetingAppRunning(runningApps) && isMicActive()
     }
 
-    private func isMicrophoneActiveForMeeting() -> Bool {
-        guard isAnyMeetingAppRunning() else { return false }
+    private func isMicrophoneActiveForMeeting(_ runningApps: [NSRunningApplication]) -> Bool {
+        guard isAnyMeetingAppRunning(runningApps) else { return false }
         return isMicActive()
     }
 
-    private func isAnyMeetingAppRunning() -> Bool {
+    private func isAnyMeetingAppRunning(_ runningApps: [NSRunningApplication]) -> Bool {
         let meetingBundleIDs = [
             "us.zoom.xos",
             "com.microsoft.teams",
@@ -81,7 +82,6 @@ class SmartPauseManager: ObservableObject {
         ]
 
         let excludedApps = Set(settings.excludedMeetingApps)
-        let runningApps = NSWorkspace.shared.runningApplications
 
         for app in runningApps {
             guard let bundleID = app.bundleIdentifier else { continue }
@@ -160,7 +160,7 @@ class SmartPauseManager: ObservableObject {
 
     // MARK: - Screen Recording Detection
 
-    private func isScreenRecording() -> Bool {
+    private func isScreenRecording(_ runningApps: [NSRunningApplication]) -> Bool {
         let recordingBundleIDs = [
             "com.apple.QuickTimePlayerX",
             "com.obsproject.obs-studio",
@@ -169,7 +169,6 @@ class SmartPauseManager: ObservableObject {
             "com.kap.Kap",
         ]
 
-        let runningApps = NSWorkspace.shared.runningApplications
         for app in runningApps {
             guard let bundleID = app.bundleIdentifier else { continue }
             if recordingBundleIDs.contains(bundleID) {
@@ -198,7 +197,7 @@ class SmartPauseManager: ObservableObject {
 
     // MARK: - Video Playback Detection
 
-    private func isVideoPlaying() -> Bool {
+    private func isVideoPlaying(_ runningApps: [NSRunningApplication]) -> Bool {
         let videoApps = [
             "com.apple.QuickTimePlayerX",
             "org.videolan.vlc",
@@ -207,7 +206,6 @@ class SmartPauseManager: ObservableObject {
             "com.apple.TV",
         ]
 
-        let runningApps = NSWorkspace.shared.runningApplications
         let mode = settings.videoPlaybackMode
 
         for app in runningApps {
@@ -279,11 +277,9 @@ class SmartPauseManager: ObservableObject {
 
     // MARK: - Deep Focus Apps
 
-    private func isDeepFocusAppActive() -> Bool {
+    private func isDeepFocusAppActive(_ runningApps: [NSRunningApplication]) -> Bool {
         let focusApps = settings.deepFocusApps
         guard !focusApps.isEmpty else { return false }
-
-        let runningApps = NSWorkspace.shared.runningApplications
 
         for focusApp in focusApps {
             for app in runningApps {

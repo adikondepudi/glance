@@ -13,6 +13,10 @@ struct AutomationTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Text("Scripts run with your user permissions. Only add scripts you understand and trust.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+
                 if settings.automations.isEmpty {
                     LabeledContent("") {
                         Text("No automations yet")

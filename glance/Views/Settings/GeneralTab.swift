@@ -1,5 +1,6 @@
 import SwiftUI
 import ServiceManagement
+import os.log
 
 struct GeneralTab: View {
     @EnvironmentObject var settings: AppSettings
@@ -124,7 +125,7 @@ struct GeneralTab: View {
                     try SMAppService.mainApp.unregister()
                 }
             } catch {
-                print("Failed to set launch at login: \(error)")
+                Logger(subsystem: "com.glance.app", category: "Settings").error("Failed to set launch at login: \(error.localizedDescription)")
             }
         }
     }

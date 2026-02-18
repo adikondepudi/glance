@@ -45,7 +45,8 @@ class BreakManager: ObservableObject {
     private var countdownValue: Int = 5
     private var sessionStartDate = Date()
     private var wasSmartPaused = false
-    private var smartPauseCooldownTimer: Timer?
+    private var smartPauseMonitorTimer: Timer?
+    private var idleMonitorTimer: Timer?
     private var lastResetDate: Date = Date()
     private var previousIdleDuration: TimeInterval = 0
     private var lastTriggeredScheduledBreaks: Set<UUID> = []
@@ -417,7 +418,8 @@ class BreakManager: ObservableObject {
     // MARK: - Smart Pause
 
     private func startSmartPauseMonitoring() {
-        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        smartPauseMonitorTimer?.invalidate()
+        smartPauseMonitorTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.checkSmartPause()
             }
@@ -460,7 +462,8 @@ class BreakManager: ObservableObject {
     // MARK: - Idle Detection
 
     private func startIdleMonitoring() {
-        Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+        idleMonitorTimer?.invalidate()
+        idleMonitorTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.checkIdle()
             }
@@ -608,9 +611,15 @@ class BreakManager: ObservableObject {
 
     private func lockScreen() {
         let task = Process()
-        task.launchPath = "/usr/bin/pmset"
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
         task.arguments = ["displaysleepnow"]
-        try? task.run()
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+        } catch {
+            // Intentional: lock screen is best-effort
+        }
     }
 
     var breakProgress: Double {

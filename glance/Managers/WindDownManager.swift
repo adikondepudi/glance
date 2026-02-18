@@ -10,10 +10,13 @@ class WindDownManager: ObservableObject {
 
     private let settings = AppSettings.shared
     private var windDownTimer: Timer?
+    private var initialDelayTimer: Timer?
     private var isActive = false
     private var settingsObserver: AnyCancellable?
     private var lastWindDownEnabled = false
     private var lastWindDownInterval = 0
+    private var outsideScheduleObserver: NSObjectProtocol?
+    private var workingStateObserver: NSObjectProtocol?
 
     private init() {
         lastWindDownEnabled = settings.windDownEnabled
@@ -21,7 +24,14 @@ class WindDownManager: ObservableObject {
     }
 
     func start() {
-        NotificationCenter.default.addObserver(
+        if let token = outsideScheduleObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+        if let token = workingStateObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+
+        outsideScheduleObserver = NotificationCenter.default.addObserver(
             forName: .enteredOutsideSchedule,
             object: nil,
             queue: .main
@@ -31,7 +41,7 @@ class WindDownManager: ObservableObject {
             }
         }
 
-        NotificationCenter.default.addObserver(
+        workingStateObserver = NotificationCenter.default.addObserver(
             forName: .enteredWorkingState,
             object: nil,
             queue: .main
@@ -87,6 +97,7 @@ class WindDownManager: ObservableObject {
 
     private func startWindDownCycle() {
         windDownTimer?.invalidate()
+        initialDelayTimer?.invalidate()
         isActive = true
 
         let interval = TimeInterval(settings.windDownIntervalMinutes * 60)
@@ -97,7 +108,7 @@ class WindDownManager: ObservableObject {
         }
 
         // Show first one after a short delay
-        Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+        initialDelayTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.showWindDown()
             }
@@ -119,6 +130,7 @@ class WindDownManager: ObservableObject {
 
     func stop() {
         windDownTimer?.invalidate()
+        initialDelayTimer?.invalidate()
         isActive = false
         dismissCount = 0
         NotificationCenter.default.post(name: .dismissWindDownOverlay, object: nil)

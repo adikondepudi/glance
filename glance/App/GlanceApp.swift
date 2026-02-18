@@ -29,6 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventMonitor: Any?
     private var clickMonitor: Any?
     private var escapeMonitor: Any?
+    private var menuBarTimer: Timer?
     private var lastEscapeTime: Date?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -89,7 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         // Update menu bar timer
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        menuBarTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateMenuBarTitle()
             }
