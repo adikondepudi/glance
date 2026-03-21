@@ -319,10 +319,11 @@ class BreakManager: ObservableObject {
     // MARK: - User Actions
 
     func skipBreak() {
-        guard case .countdown = state else { return }
         if settings.skipDifficulty == .hardcore { return }
+        reminderDismissTimer?.invalidate()
         breaksSkippedCount += 1
         stats.recordBreakSkipped()
+        NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
         NotificationCenter.default.post(name: .dismissBreakOverlay, object: nil)
         resetWorkTimer()
     }

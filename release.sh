@@ -96,7 +96,31 @@ else
 fi
 
 echo ""
-echo "=== Done ==="
 echo "DMG: ${RELEASE_DIR}/${DMG_NAME}"
 echo ""
-echo "To install: open the DMG and drag Glance to Applications."
+
+# Upload to GitHub
+if ! command -v gh &> /dev/null; then
+    echo "gh CLI not found — skipping GitHub release."
+    echo "Install with: brew install gh"
+    echo ""
+    echo "To install locally: open the DMG and drag Glance to Applications."
+    exit 0
+fi
+
+TAG="v${VERSION}"
+
+if gh release view "$TAG" &> /dev/null; then
+    echo "Release ${TAG} already exists. Uploading DMG as additional asset..."
+    gh release upload "$TAG" "${RELEASE_DIR}/${DMG_NAME}" --clobber
+else
+    echo "Creating GitHub release ${TAG}..."
+    gh release create "$TAG" \
+        "${RELEASE_DIR}/${DMG_NAME}" \
+        --title "Glance ${VERSION}" \
+        --generate-notes
+fi
+
+echo ""
+echo "=== Done ==="
+echo "Release: $(gh release view "$TAG" --json url -q .url)"

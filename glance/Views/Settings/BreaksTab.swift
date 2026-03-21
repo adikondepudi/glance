@@ -184,9 +184,10 @@ struct BreaksTab: View {
 
                 if settings.showPreBreakReminder {
                     Picker("Show before break", selection: $settings.preBreakReminderSeconds) {
+                        Text("5 seconds").tag(5)
+                        Text("10 seconds").tag(10)
                         Text("30 seconds").tag(30)
                         Text("1 minute").tag(60)
-                        Text("2 minutes").tag(120)
                     }
                 }
 
