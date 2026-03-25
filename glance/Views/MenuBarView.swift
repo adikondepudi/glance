@@ -3,10 +3,15 @@ import SwiftUI
 struct MenuBarView: View {
     @EnvironmentObject var breakManager: BreakManager
     @EnvironmentObject var settings: AppSettings
+    @ObservedObject private var updateManager = UpdateManager.shared
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(spacing: 0) {
+            if updateManager.updateAvailable {
+                updateBanner
+                Divider()
+            }
             timerSection
             Divider()
             actionsSection
@@ -16,11 +21,37 @@ struct MenuBarView: View {
         .frame(width: 280)
     }
 
+    private var updateBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.down.circle.fill")
+                .foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Glance \(updateManager.latestVersion) available")
+                    .font(.caption.weight(.medium))
+            }
+            Spacer()
+            Button("Update") {
+                updateManager.openReleasePage()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            Button {
+                updateManager.dismissUpdate()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
     private var stateIcon: String {
         switch breakManager.state {
         case .working, .reminding: return "eye"
         case .onBreak: return "eye.slash"
-        case .countdown: return "clock"
         case .paused, .smartPaused: return "pause.circle"
         case .idle: return "moon"
         case .outsideSchedule: return "clock.badge.xmark"
@@ -31,7 +62,6 @@ struct MenuBarView: View {
         switch breakManager.state {
         case .working: return "Working"
         case .reminding: return "Break coming up"
-        case .countdown(let s): return "Break in \(s)s"
         case .onBreak(let isLong): return isLong ? "Long break" : "Short break"
         case .paused: return "Paused"
         case .smartPaused(let reason): return "Paused — \(reason)"
@@ -67,14 +97,6 @@ struct MenuBarView: View {
 
                 ProgressView(value: breakManager.breakProgress)
                     .tint(.accentColor)
-
-            case .countdown(let s):
-                Text("\(s)")
-                    .font(.system(size: 24, weight: .medium).monospacedDigit())
-
-                Text("Starting break…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
 
             default:
                 Image(systemName: stateIcon)
@@ -171,7 +193,7 @@ struct MenuBarView: View {
 
     private var isOnBreakOrCountdown: Bool {
         switch breakManager.state {
-        case .onBreak, .countdown: return true
+        case .onBreak: return true
         default: return false
         }
     }
@@ -199,6 +221,7 @@ struct MenuBarView: View {
 
     private var settingsButton: some View {
         Button {
+            NSApp.setActivationPolicy(.regular)
             openSettings()
             NSApp.activate(ignoringOtherApps: true)
         } label: {

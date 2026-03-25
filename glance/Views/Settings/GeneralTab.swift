@@ -4,6 +4,7 @@ import os.log
 
 struct GeneralTab: View {
     @EnvironmentObject var settings: AppSettings
+    @ObservedObject private var updateManager = UpdateManager.shared
     @State private var showResetConfirmation = false
 
     var body: some View {
@@ -62,7 +63,7 @@ struct GeneralTab: View {
             }
 
             Section("Idle Detection") {
-                Toggle("Pause timer when I'm away from the computer", isOn: $settings.idleDetectionEnabled)
+                Toggle("Reset timer when I'm away from the computer", isOn: $settings.idleDetectionEnabled)
 
                 if settings.idleDetectionEnabled {
                     Picker("Consider idle after", selection: $settings.idleThresholdSeconds) {
@@ -72,7 +73,9 @@ struct GeneralTab: View {
                         Text("5 minutes").tag(300)
                     }
 
-                    Toggle("Ask if I took a break when returning from idle", isOn: $settings.askOnIdleReturn)
+                    Text("Also triggers on screen lock, lid close, and system sleep.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -99,6 +102,15 @@ struct GeneralTab: View {
                 }
             }
 
+            Section("Updates") {
+                HStack {
+                    Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    updateStatusView
+                }
+            }
+
             Section("Data") {
                 Button("Reset All Settings…", role: .destructive) {
                     showResetConfirmation = true
@@ -113,6 +125,48 @@ struct GeneralTab: View {
             }
         } message: {
             Text("This will restore all settings to their defaults. This cannot be undone.")
+        }
+    }
+
+    @ViewBuilder
+    private var updateStatusView: some View {
+        switch updateManager.checkState {
+        case .idle:
+            Button("Check for Updates") {
+                updateManager.checkForUpdates()
+            }
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Checking…")
+                    .foregroundStyle(.secondary)
+            }
+        case .upToDate:
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("Up to date")
+                    .foregroundStyle(.secondary)
+            }
+        case .available(let version):
+            HStack(spacing: 6) {
+                Text("v\(version) available")
+                    .foregroundStyle(.orange)
+                Button("Download") {
+                    updateManager.openReleasePage()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        case .error:
+            HStack(spacing: 6) {
+                Text("Check failed")
+                    .foregroundStyle(.secondary)
+                Button("Retry") {
+                    updateManager.checkForUpdates()
+                }
+            }
         }
     }
 

@@ -27,11 +27,11 @@ struct BreakReminderView: View {
                 // Breaks skipped warning (#2, #16)
                 if breakManager.breaksSkippedCount > 0 {
                     if breakManager.breaksSkippedCount >= 3 {
-                        Text("You've skipped \(breakManager.breaksSkippedCount) breaks. Consider taking one.")
+                        Text("You've skipped \(breakManager.breaksSkippedCount) breaks in a row. Consider taking one.")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     } else {
-                        Text("\(breakManager.breaksSkippedCount) break\(breakManager.breaksSkippedCount == 1 ? "" : "s") skipped")
+                        Text("\(breakManager.breaksSkippedCount) break\(breakManager.breaksSkippedCount == 1 ? "" : "s") skipped in a row")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

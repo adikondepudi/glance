@@ -191,11 +191,6 @@ struct BreaksTab: View {
                     }
                 }
 
-                Picker("Countdown duration", selection: $settings.countdownDuration) {
-                    Text("5 seconds").tag(5)
-                    Text("10 seconds").tag(10)
-                }
-
                 Toggle("Show overtime nudge", isOn: $settings.showOvertimeNudge)
             }
 

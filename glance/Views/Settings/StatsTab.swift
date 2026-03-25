@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct StatsTab: View {
     @ObservedObject private var statsManager = StatsManager.shared
@@ -16,6 +17,12 @@ struct StatsTab: View {
             }
 
             let period = statsManager.stats(for: selectedRange)
+
+            if selectedRange == .today {
+                Section("Activity Timeline") {
+                    DayActivityChart(events: statsManager.todayStats.events)
+                }
+            }
 
             Section("Screen Score") {
                 HStack {

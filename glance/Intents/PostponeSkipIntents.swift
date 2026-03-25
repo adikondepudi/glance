@@ -33,9 +33,6 @@ struct SkipBreakIntent: AppIntent {
         }
 
         switch state {
-        case .countdown:
-            await MainActor.run { BreakManager.shared.skipBreak() }
-            return .result(dialog: "Break skipped.")
         case .onBreak:
             await MainActor.run { BreakManager.shared.skipCurrentBreak() }
             return .result(dialog: "Break ended early.")

@@ -38,8 +38,6 @@ struct GlanceStatusQuery: EntityQuery {
                 stateName = "Working"
             case .reminding:
                 stateName = "Break reminder"
-            case .countdown(let seconds):
-                stateName = "Countdown (\(seconds)s)"
             case .onBreak(let isLong):
                 stateName = isLong ? "Long break" : "Short break"
             case .paused:

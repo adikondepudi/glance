@@ -4,10 +4,13 @@ import Foundation
 
 enum StatsEventType: String, Codable {
     case breakCompleted
+    case breakStarted
     case breakSkipped
     case breakPostponed
     case focusCycleCompleted
     case screenTimeMinute
+    case idleStarted
+    case idleEnded
 }
 
 struct StatsEvent: Codable, Identifiable {

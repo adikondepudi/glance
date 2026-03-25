@@ -20,7 +20,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var windDownWindowControllers: [WindDownWindowController] = []
     private var reminderWindow: ReminderWindowController?
     private var onboardingWindow: NSWindow?
-    private var idleReturnWindow: NSWindow?
     private let breakManager = BreakManager.shared
     private let wellness = WellnessManager.shared
     private let windDown = WindDownManager.shared
@@ -35,6 +34,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
         setupNotificationObservers()
+        setupSettingsWindowObserver()
         wellness.start()
         windDown.start()
         setupGlobalShortcuts()
@@ -136,8 +136,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.title = " Idle"
         case .outsideSchedule:
             statusItem.button?.title = " Off"
-        case .countdown(let s):
-            statusItem.button?.title = " \(s)..."
         }
     }
 
@@ -169,7 +167,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Settings...", action: #selector(contextOpenSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Check for Updates…", action: #selector(contextCheckForUpdates), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(contextOpenSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit Glance", action: #selector(contextQuit), keyEquivalent: "q"))
 
@@ -194,9 +193,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in breakManager.resumeByUser() }
     }
 
+    @objc private func contextCheckForUpdates() {
+        Task { @MainActor in UpdateManager.shared.checkForUpdates() }
+    }
+
     @objc private func contextOpenSettings() {
+        showSettingsWindow()
+    }
+
+    private func showSettingsWindow() {
+        // Temporarily show dock icon so the Settings window stays visible when clicking outside
+        NSApp.setActivationPolicy(.regular)
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func setupSettingsWindowObserver() {
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] notification in
+            guard let window = notification.object as? NSWindow else { return }
+            // Settings windows have the title "Settings" or contain our SettingsView
+            if window.title == "Settings" || window.title.contains("glance") {
+                // Revert to menu bar–only after a short delay to avoid flicker
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    // Only hide dock icon if no other windows are open
+                    let hasVisibleWindows = NSApp.windows.contains { $0.isVisible && $0 !== self?.statusItem.button?.window }
+                    if !hasVisibleWindows {
+                        NSApp.setActivationPolicy(.accessory)
+                    }
+                }
+            }
+        }
     }
 
     @objc private func contextQuit() {
@@ -242,7 +268,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissBreakOverlay), name: .dismissBreakOverlay, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowBreakReminder), name: .showBreakReminder, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissBreakReminder), name: .dismissBreakReminder, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(handleShowIdleReturnPrompt), name: .showIdleReturnPrompt, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowWindDown), name: .showWindDownOverlay, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissWindDown), name: .dismissWindDownOverlay, object: nil)
     }
@@ -392,32 +417,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-    }
-
-    // MARK: - Idle Return Prompt (#10)
-
-    @objc private func handleShowIdleReturnPrompt() {
-        DispatchQueue.main.async { [weak self] in
-            self?.showIdleReturnAlert()
-        }
-    }
-
-    private func showIdleReturnAlert() {
-        guard idleReturnWindow == nil else { return }
-
-        let alert = NSAlert()
-        alert.messageText = "Did you take a break while away?"
-        alert.informativeText = "You were away from your computer long enough for a break."
-        alert.addButton(withTitle: "Yes, I rested")
-        alert.addButton(withTitle: "No, I didn't")
-        alert.alertStyle = .informational
-
-        let response = alert.runModal()
-        if response == .alertSecondButtonReturn {
-            // "No" — don't count as break, timer already reset
-            // Could track this, but timer is already reset in checkIdle
-        }
-        // "Yes" — timer already reset normally
     }
 
     // MARK: - Onboarding (#11)

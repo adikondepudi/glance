@@ -136,9 +136,6 @@ class AppSettings: ObservableObject {
         set { skipDifficultyRaw = newValue.rawValue }
     }
 
-    // MARK: Countdown
-    @AppStorage("countdownDuration") var countdownDuration: Int = 5
-
     // MARK: Postpone Limits
     @AppStorage("maxPostponesPerDay") var maxPostponesPerDay: Int = 0 // 0 = unlimited
 
@@ -213,7 +210,7 @@ class AppSettings: ObservableObject {
     @AppStorage("showMenuBarTimer") var showMenuBarTimer: Bool = true
     @AppStorage("showMenuBarIcon") var showMenuBarIcon: Bool = true
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding: Bool = false
-    @AppStorage("askOnIdleReturn") var askOnIdleReturn: Bool = true
+    // askOnIdleReturn removed — idle always silently resets timer
 
     // MARK: Menu Bar Icon
     @AppStorage("menuBarIconRaw") var menuBarIconRaw: String = MenuBarIcon.eye.rawValue

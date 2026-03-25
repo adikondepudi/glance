@@ -5,7 +5,6 @@ import AppKit
 enum BreakState: Equatable {
     case working
     case reminding          // pre-break notification shown
-    case countdown(Int)     // countdown to break start (seconds remaining)
     case onBreak(isLong: Bool)
     case paused
     case smartPaused(reason: String)
@@ -42,7 +41,6 @@ class BreakManager: ObservableObject {
     private var breakTimer: Timer?
     private var overtimeTimer: Timer?
     private var reminderDismissTimer: Timer?
-    private var countdownValue: Int = 5
     private var sessionStartDate = Date()
     private var wasSmartPaused = false
     private var smartPauseMonitorTimer: Timer?
@@ -65,6 +63,7 @@ class BreakManager: ObservableObject {
         resetWorkTimer()
         startIdleMonitoring()
         startSmartPauseMonitoring()
+        startSystemSleepMonitoring()
         observeSettingsChanges()
     }
 
@@ -205,25 +204,11 @@ class BreakManager: ObservableObject {
         if settings.timerMode == .pomodoro {
             isLong = (pomodoroCycle + 1) % settings.pomodoroLongBreakAfter == 0
         } else {
-            isLong = settings.longBreakEnabled && (shortBreakCount + 1) % settings.longBreakInterval == 0
+            isLong = settings.longBreakEnabled && (shortBreakCount + 1) % (settings.longBreakInterval + 1) == 0
         }
 
-        countdownValue = settings.countdownDuration
-        state = .countdown(countdownValue)
         currentMessage = randomMessage()
-
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
-            Task { @MainActor in
-                guard let self = self else { timer.invalidate(); return }
-                self.countdownValue -= 1
-                if self.countdownValue <= 0 {
-                    timer.invalidate()
-                    self.startBreak(isLong: isLong)
-                } else {
-                    self.state = .countdown(self.countdownValue)
-                }
-            }
-        }
+        startBreak(isLong: isLong)
     }
 
     func startBreak(isLong: Bool) {
@@ -236,6 +221,9 @@ class BreakManager: ObservableObject {
         currentBreakDuration = duration
         secondsIntoBreak = 0
         state = .onBreak(isLong: isLong)
+
+        // Stats: record break started
+        stats.recordBreakStarted(isLong: isLong)
 
         // Per-break-type sounds
         if settings.soundSettingsMigrated {
@@ -307,6 +295,9 @@ class BreakManager: ObservableObject {
         // Stats
         stats.recordBreakCompleted(isLong: isLong)
 
+        // Reset consecutive skip counter on successful break
+        breaksSkippedCount = 0
+
         // Reset wellness timers after break if enabled
         if settings.resetWellnessAfterBreak {
             WellnessManager.shared.resetTimers()
@@ -364,7 +355,7 @@ class BreakManager: ObservableObject {
         reminderDismissTimer?.invalidate()
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
 
-        let isLong = settings.longBreakEnabled && (shortBreakCount + 1) % settings.longBreakInterval == 0
+        let isLong = settings.longBreakEnabled && (shortBreakCount + 1) % (settings.longBreakInterval + 1) == 0
         startBreak(isLong: isLong)
     }
 
@@ -481,17 +472,75 @@ class BreakManager: ObservableObject {
                 previousIdleDuration = 0
                 workTimer?.invalidate()
                 state = .idle
+                stats.recordIdleStarted()
             }
             previousIdleDuration = idleTime
         } else if state == .idle {
-            // Returned from idle
-            let breakDuration = Double(settings.shortBreakDuration)
-            if settings.askOnIdleReturn && previousIdleDuration >= breakDuration {
-                // Show "did you take a break?" prompt
-                NotificationCenter.default.post(name: .showIdleReturnPrompt, object: nil)
-            }
+            // Returned from idle — silently reset timer
+            stats.recordIdleEnded()
             resetWorkTimer()
         }
+    }
+
+    // MARK: - System Sleep/Lock Detection
+
+    private func startSystemSleepMonitoring() {
+        let workspace = NSWorkspace.shared.notificationCenter
+
+        // Screen off / lid close
+        workspace.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemSleep() }
+        }
+
+        // System going to sleep
+        workspace.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemSleep() }
+        }
+
+        // Screen lock
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsLocked"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemSleep() }
+        }
+
+        // Wake / screen on
+        workspace.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemWake() }
+        }
+
+        workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemWake() }
+        }
+
+        // Screen unlock
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsUnlocked"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleSystemWake() }
+        }
+    }
+
+    private func handleSystemSleep() {
+        guard settings.idleDetectionEnabled else { return }
+        guard state == .working || state == .reminding else { return }
+
+        workTimer?.invalidate()
+        reminderDismissTimer?.invalidate()
+        NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
+        previousIdleDuration = 0
+        state = .idle
+        stats.recordIdleStarted()
+    }
+
+    private func handleSystemWake() {
+        guard settings.idleDetectionEnabled else { return }
+        guard state == .idle else { return }
+
+        stats.recordIdleEnded()
+        resetWorkTimer()
     }
 
     // MARK: - Scheduled Breaks
@@ -671,5 +720,4 @@ extension Notification.Name {
     static let dismissBreakOverlay = Notification.Name("dismissBreakOverlay")
     static let showPostureReminder = Notification.Name("showPostureReminder")
     static let showBlinkReminder = Notification.Name("showBlinkReminder")
-    static let showIdleReturnPrompt = Notification.Name("showIdleReturnPrompt")
 }

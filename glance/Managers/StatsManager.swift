@@ -34,6 +34,12 @@ class StatsManager: ObservableObject {
 
     // MARK: - Recording Events
 
+    func recordBreakStarted(isLong: Bool) {
+        let event = StatsEvent(type: .breakStarted, isLongBreak: isLong)
+        todayStats.events.append(event)
+        scheduleSave()
+    }
+
     func recordBreakCompleted(isLong: Bool) {
         let event = StatsEvent(type: .breakCompleted, isLongBreak: isLong)
         todayStats.events.append(event)
@@ -48,6 +54,18 @@ class StatsManager: ObservableObject {
 
     func recordBreakPostponed() {
         let event = StatsEvent(type: .breakPostponed)
+        todayStats.events.append(event)
+        scheduleSave()
+    }
+
+    func recordIdleStarted() {
+        let event = StatsEvent(type: .idleStarted)
+        todayStats.events.append(event)
+        scheduleSave()
+    }
+
+    func recordIdleEnded() {
+        let event = StatsEvent(type: .idleEnded)
         todayStats.events.append(event)
         scheduleSave()
     }

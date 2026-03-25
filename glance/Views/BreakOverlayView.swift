@@ -63,7 +63,7 @@ struct BreakOverlayView: View {
 
                 // Skip warning (#16)
                 if breakManager.breaksSkippedCount >= 3 {
-                    Text("You've skipped \(breakManager.breaksSkippedCount) breaks. Consider resting your eyes.")
+                    Text("You've skipped \(breakManager.breaksSkippedCount) breaks in a row. Consider resting your eyes.")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.orange.opacity(0.8))
                         .padding(.bottom, 8)

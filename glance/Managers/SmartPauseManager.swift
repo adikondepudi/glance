@@ -1,6 +1,6 @@
 import Foundation
 import AppKit
-import CoreAudio
+import CoreMediaIO
 
 @MainActor
 class SmartPauseManager: ObservableObject {
@@ -54,103 +54,38 @@ class SmartPauseManager: ObservableObject {
     // MARK: - Meeting Detection
 
     private func isMeetingActive(_ runningApps: [NSRunningApplication]) -> Bool {
-        return isCameraActive(runningApps) || isMicrophoneActiveForMeeting(runningApps)
+        return isCameraInUse()
     }
 
-    private func isCameraActive(_ runningApps: [NSRunningApplication]) -> Bool {
-        // Check if any meeting app is running with an active microphone
-        // (camera usage implies mic usage in video calls)
-        return isAnyMeetingAppRunning(runningApps) && isMicActive()
-    }
-
-    private func isMicrophoneActiveForMeeting(_ runningApps: [NSRunningApplication]) -> Bool {
-        guard isAnyMeetingAppRunning(runningApps) else { return false }
-        return isMicActive()
-    }
-
-    private func isAnyMeetingAppRunning(_ runningApps: [NSRunningApplication]) -> Bool {
-        let meetingBundleIDs = [
-            "us.zoom.xos",
-            "com.microsoft.teams",
-            "com.microsoft.teams2",
-            "com.google.Chrome", // Google Meet runs in Chrome
-            "com.apple.FaceTime",
-            "com.cisco.webexmeetingsapp",
-            "com.slack.Slack",
-            "com.discord.Discord",
-            "com.skype.skype",
-        ]
-
-        let excludedApps = Set(settings.excludedMeetingApps)
-
-        for app in runningApps {
-            guard let bundleID = app.bundleIdentifier else { continue }
-            if meetingBundleIDs.contains(bundleID) && !excludedApps.contains(bundleID) {
-                if app.isActive || app.ownsMenuBar {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
-    private func isMicActive() -> Bool {
-        let excludedDevices = Set(settings.excludedMicDevices)
-
-        // Get all audio devices
-        var devicesAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
+    private func isCameraInUse() -> Bool {
+        var property = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
         )
 
         var dataSize: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &devicesAddress, 0, nil, &dataSize) == noErr else { return false }
+        guard CMIOObjectGetPropertyDataSize(CMIOObjectID(kCMIOObjectSystemObject), &property, 0, nil, &dataSize) == noErr else { return false }
 
-        let deviceCount = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
-        var deviceIDs = [AudioDeviceID](repeating: 0, count: deviceCount)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &devicesAddress, 0, nil, &dataSize, &deviceIDs) == noErr else { return false }
+        let deviceCount = Int(dataSize) / MemoryLayout<CMIODeviceID>.size
+        var deviceIDs = [CMIODeviceID](repeating: 0, count: deviceCount)
+        var dataUsed: UInt32 = 0
+        guard CMIOObjectGetPropertyData(CMIOObjectID(kCMIOObjectSystemObject), &property, 0, nil, dataSize, &dataUsed, &deviceIDs) == noErr else { return false }
 
         for deviceID in deviceIDs {
-            // Skip excluded devices
-            if excludedDevices.contains(String(deviceID)) { continue }
-
-            // Check if device has input channels
-            var inputAddress = AudioObjectPropertyAddress(
-                mSelector: kAudioDevicePropertyStreamConfiguration,
-                mScope: kAudioObjectPropertyScopeInput,
-                mElement: kAudioObjectPropertyElementMain
-            )
-
-            var inputSize: UInt32 = 0
-            guard AudioObjectGetPropertyDataSize(deviceID, &inputAddress, 0, nil, &inputSize) == noErr else { continue }
-            guard inputSize > 0 else { continue }
-
-            let bufferListPtr = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: 1)
-            defer { bufferListPtr.deallocate() }
-            guard AudioObjectGetPropertyData(deviceID, &inputAddress, 0, nil, &inputSize, bufferListPtr) == noErr else { continue }
-
-            let bufferList = bufferListPtr.pointee
-            guard bufferList.mNumberBuffers > 0, bufferList.mBuffers.mNumberChannels > 0 else { continue }
-
-            // Check if running
+            // Check if this camera device is actively being used
             var isRunning: UInt32 = 0
             var runningSize = UInt32(MemoryLayout<UInt32>.size)
-            var runningAddress = AudioObjectPropertyAddress(
-                mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
-                mScope: kAudioObjectPropertyScopeInput,
-                mElement: kAudioObjectPropertyElementMain
+            var runningProperty = CMIOObjectPropertyAddress(
+                mSelector: CMIOObjectPropertySelector(kCMIODevicePropertyDeviceIsRunningSomewhere),
+                mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+                mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
             )
 
-            let runStatus = AudioObjectGetPropertyData(
-                deviceID,
-                &runningAddress,
-                0, nil,
-                &runningSize,
-                &isRunning
-            )
+            var runningUsed: UInt32 = 0
+            let status = CMIOObjectGetPropertyData(deviceID, &runningProperty, 0, nil, runningSize, &runningUsed, &isRunning)
 
-            if runStatus == noErr && isRunning != 0 {
+            if status == noErr && isRunning != 0 {
                 return true
             }
         }
