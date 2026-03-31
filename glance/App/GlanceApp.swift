@@ -194,7 +194,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func contextCheckForUpdates() {
-        Task { @MainActor in UpdateManager.shared.checkForUpdates() }
+        Task { @MainActor in
+            UpdateManager.shared.checkForUpdates { [weak self] state in
+                self?.showUpdateAlert(state)
+            }
+        }
+    }
+
+    @MainActor private func showUpdateAlert(_ state: UpdateCheckState) {
+        let alert = NSAlert()
+        switch state {
+        case .upToDate:
+            alert.messageText = "You're up to date"
+            alert.informativeText = "Glance \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") is the latest version."
+            alert.alertStyle = .informational
+        case .available(let version):
+            alert.messageText = "Update Available"
+            alert.informativeText = "Glance \(version) is available."
+            alert.addButton(withTitle: "Download")
+            alert.addButton(withTitle: "Later")
+            alert.alertStyle = .informational
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                UpdateManager.shared.openReleasePage()
+            }
+            return
+        case .error:
+            alert.messageText = "Update Check Failed"
+            alert.informativeText = "Could not check for updates. Please try again later."
+            alert.alertStyle = .warning
+        default:
+            return
+        }
+        alert.runModal()
     }
 
     @objc private func contextOpenSettings() {
@@ -202,27 +234,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showSettingsWindow() {
-        // Temporarily show dock icon so the Settings window stays visible when clicking outside
-        NSApp.setActivationPolicy(.regular)
         NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     private func setupSettingsWindowObserver() {
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] notification in
-            guard let window = notification.object as? NSWindow else { return }
-            // Settings windows have the title "Settings" or contain our SettingsView
-            if window.title == "Settings" || window.title.contains("glance") {
-                // Revert to menu bar–only after a short delay to avoid flicker
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    // Only hide dock icon if no other windows are open
-                    let hasVisibleWindows = NSApp.windows.contains { $0.isVisible && $0 !== self?.statusItem.button?.window }
-                    if !hasVisibleWindows {
-                        NSApp.setActivationPolicy(.accessory)
-                    }
-                }
-            }
-        }
+        // No-op: app stays as accessory (no dock icon) at all times
     }
 
     @objc private func contextQuit() {
@@ -235,6 +252,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 closePopover()
             } else {
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+                popover.contentViewController?.view.window?.makeKey()
                 startClickMonitor()
             }
         }
@@ -264,12 +282,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Notification Observers
 
     private func setupNotificationObservers() {
+        NotificationCenter.default.addObserver(self, selector: #selector(handleDismissPopover), name: .dismissPopover, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowBreakOverlay(_:)), name: .showBreakOverlay, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissBreakOverlay), name: .dismissBreakOverlay, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowBreakReminder), name: .showBreakReminder, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissBreakReminder), name: .dismissBreakReminder, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowWindDown), name: .showWindDownOverlay, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissWindDown), name: .dismissWindDownOverlay, object: nil)
+    }
+
+    @objc private func handleDismissPopover() {
+        closePopover()
     }
 
     @objc private func handleShowBreakOverlay(_ notification: Notification) {

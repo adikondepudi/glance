@@ -37,12 +37,13 @@ class UpdateManager: ObservableObject {
         }
     }
 
-    func checkForUpdates(silent: Bool = false) {
+    func checkForUpdates(silent: Bool = false, completion: ((UpdateCheckState) -> Void)? = nil) {
         checkState = .checking
 
         let urlString = "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases/latest"
         guard let url = URL(string: urlString) else {
             checkState = .error
+            completion?(.error)
             return
         }
 
@@ -59,6 +60,7 @@ class UpdateManager: ObservableObject {
                       let tagName = json["tag_name"] as? String else {
                     if !silent { self.checkState = .error }
                     else { self.checkState = .idle }
+                    completion?(.error)
                     return
                 }
 
@@ -70,8 +72,10 @@ class UpdateManager: ObservableObject {
                     self.releaseURL = URL(string: htmlURL)
                     self.updateAvailable = true
                     self.checkState = .available(version: latest)
+                    completion?(.available(version: latest))
                 } else {
                     self.checkState = .upToDate
+                    completion?(.upToDate)
                     // Auto-clear "up to date" message after 3 seconds
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                         if self.checkState == .upToDate {

@@ -131,7 +131,10 @@ class StatsManager: ObservableObject {
     }
 
     private func loadToday() {
-        ensureTodayDate()
+        let today = Self.dateString(for: Date())
+        if let saved = loadDay(today) {
+            todayStats = saved
+        }
     }
 
     private func ensureTodayDate() {

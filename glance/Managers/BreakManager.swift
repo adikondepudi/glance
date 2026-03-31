@@ -65,6 +65,13 @@ class BreakManager: ObservableObject {
         startSmartPauseMonitoring()
         startSystemSleepMonitoring()
         observeSettingsChanges()
+        restoreStatsFromDisk()
+    }
+
+    private func restoreStatsFromDisk() {
+        let today = stats.todayStats
+        shortBreakCount = today.breaksCompleted
+        totalScreenTime = TimeInterval(today.screenTimeMinutes * 60)
     }
 
     private func observeSettingsChanges() {
@@ -720,4 +727,5 @@ extension Notification.Name {
     static let dismissBreakOverlay = Notification.Name("dismissBreakOverlay")
     static let showPostureReminder = Notification.Name("showPostureReminder")
     static let showBlinkReminder = Notification.Name("showBlinkReminder")
+    static let dismissPopover = Notification.Name("dismissPopover")
 }

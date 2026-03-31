@@ -221,7 +221,7 @@ struct MenuBarView: View {
 
     private var settingsButton: some View {
         Button {
-            NSApp.setActivationPolicy(.regular)
+            NotificationCenter.default.post(name: .dismissPopover, object: nil)
             openSettings()
             NSApp.activate(ignoringOtherApps: true)
         } label: {

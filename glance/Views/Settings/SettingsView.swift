@@ -50,7 +50,7 @@ struct SettingsView: View {
                     Label("Automations", systemImage: "bolt")
                 }
         }
-        .frame(width: 580, height: 500)
+        .frame(width: 640, height: 500)
         .environmentObject(settings)
     }
 }
