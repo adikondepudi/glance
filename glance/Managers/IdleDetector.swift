@@ -4,8 +4,20 @@ import IOKit
 class IdleDetector {
     static let shared = IdleDetector()
 
+    /// Testing hook: when non-nil, `systemIdleTime` returns this value instead
+    /// of querying IOKit — lets tests simulate the user being away from the
+    /// keyboard for a whole break (or typing right up to the end of one)
+    /// without depending on real, unpredictable hardware idle time. `nil`
+    /// (default) uses the normal IOKit-backed reading. Only ever set by test
+    /// code.
+    static var idleTimeOverrideForTesting: TimeInterval?
+
     /// Returns the number of seconds since the last user input event
     var systemIdleTime: TimeInterval {
+        if let override = Self.idleTimeOverrideForTesting {
+            return override
+        }
+
         var iterator: io_iterator_t = 0
         defer { IOObjectRelease(iterator) }
 

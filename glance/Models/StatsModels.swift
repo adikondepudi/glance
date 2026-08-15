@@ -11,6 +11,7 @@ enum StatsEventType: String, Codable {
     case screenTimeMinute
     case idleStarted
     case idleEnded
+    case movementBreak
 }
 
 struct StatsEvent: Codable, Identifiable {
@@ -18,12 +19,16 @@ struct StatsEvent: Codable, Identifiable {
     let type: StatsEventType
     let timestamp: Date
     let isLongBreak: Bool?
+    /// Only set on `.movementBreak` events: whether input-idle verification
+    /// concluded the user actually stepped away for the break.
+    let moved: Bool?
 
-    init(type: StatsEventType, isLongBreak: Bool? = nil) {
+    init(type: StatsEventType, isLongBreak: Bool? = nil, moved: Bool? = nil) {
         self.id = UUID()
         self.type = type
         self.timestamp = Date()
         self.isLongBreak = isLongBreak
+        self.moved = moved
     }
 }
 
@@ -55,6 +60,14 @@ struct DailyStats: Codable {
 
     var focusCyclesCompleted: Int {
         events.filter { $0.type == .focusCycleCompleted }.count
+    }
+
+    var movementBreaksVerified: Int {
+        events.filter { $0.type == .movementBreak && $0.moved == true }.count
+    }
+
+    var movementBreaksAttempted: Int {
+        events.filter { $0.type == .movementBreak }.count
     }
 
     var screenTimeMinutes: Int {

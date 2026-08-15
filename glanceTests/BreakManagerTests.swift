@@ -26,7 +26,7 @@ final class BreakManagerTests: XCTestCase {
     /// writes via `AppSettings`.
     private static let settingsKeys: [String] = [
         "shortBreakInterval", "shortBreakDuration",
-        "longBreakEnabled", "longBreakInterval", "longBreakDuration",
+        "longBreakEnabled", "longBreakInterval", "longBreakDuration", "movementBreaksEnabled",
         "timerModeRaw", "pomodoroWorkMinutes", "pomodoroShortBreakSeconds",
         "pomodoroLongBreakSeconds", "pomodoroLongBreakAfter",
         "skipDifficulty", "maxPostponesPerDay",
@@ -37,7 +37,7 @@ final class BreakManagerTests: XCTestCase {
         "playSoundShortBreakStart", "playSoundShortBreakEnd",
         "playSoundLongBreakStart", "playSoundLongBreakEnd",
         "officeHours", "scheduledBreaks", "automations",
-        "hasCompletedOnboarding",
+        "hasCompletedOnboarding", "customMessages",
     ]
 
     /// Redirects StatsManager's on-disk persistence to a per-run scratch
@@ -73,6 +73,7 @@ final class BreakManagerTests: XCTestCase {
         // activity / wall-clock timing. Individual tests override specific
         // values on top of this as needed.
         settings.longBreakEnabled = false
+        settings.movementBreaksEnabled = false
         settings.timerModeRaw = TimerMode.interval.rawValue
         settings.skipDifficultyRaw = SkipDifficulty.casual.rawValue
         settings.maxPostponesPerDay = 0
@@ -89,6 +90,15 @@ final class BreakManagerTests: XCTestCase {
         settings.scheduledBreaks = []
         settings.officeHours = OfficeHoursSchedule() // enabled = false
         settings.hasCompletedOnboarding = true
+        // Fixed, known custom message list — movement-break tests assert
+        // messages come from (or don't come from) this exact set, so it must
+        // not depend on whatever the developer has configured for real.
+        settings.customMessages = [
+            "Look at something 20 feet away",
+            "Blink and breathe deeply",
+            "Stretch your shoulders",
+            "Rest your eyes, you deserve it",
+        ]
 
         bm = BreakManager.shared
         bm.resetForTesting()
@@ -97,6 +107,7 @@ final class BreakManagerTests: XCTestCase {
     override func tearDown() {
         bm.resetForTesting()
         sandbox.restoreAll()
+        IdleDetector.idleTimeOverrideForTesting = nil
         bm = nil
         settings = nil
         sandbox = nil
@@ -410,5 +421,117 @@ final class BreakManagerTests: XCTestCase {
 
         bm.startLongBreakNow()
         XCTAssertEqual(bm.secondsIntoBreak, 2, "startLongBreakNow must also refuse to stack a break on top of a running one")
+    }
+
+    // MARK: - Movement breaks
+
+    /// Counts `.movementBreak` stats events recorded strictly after `mark` —
+    /// isolates each test's own recording from anything already in
+    /// `todayStats` (StatsManager's on-disk redirect is process-wide, not
+    /// per-test).
+    private func movementEventsRecorded(since mark: Int) -> [StatsEvent] {
+        Array(StatsManager.shared.todayStats.events.suffix(from: mark))
+            .filter { $0.type == .movementBreak }
+    }
+
+    func testMovementBreakNaturalCompletionWithFullIdleRecordsMoved() {
+        settings.longBreakEnabled = true
+        settings.movementBreaksEnabled = true
+        settings.longBreakDuration = 30 // seconds — comfortably above the grace period
+        bm.resetForTesting()
+
+        IdleDetector.idleTimeOverrideForTesting = 9999 // no keyboard/mouse input at all during the break
+
+        bm.startLongBreakNow()
+        XCTAssertTrue(bm.isMovementBreak, "an enabled movement break should be flagged as such once it starts")
+        XCTAssertFalse(settings.customMessages.contains(bm.currentMessage), "a movement break's prompt should come from the built-in movement pool, not the custom message list")
+
+        let mark = StatsManager.shared.todayStats.events.count
+        for _ in 0..<30 { bm.breakTick() } // run the break to natural completion
+
+        XCTAssertEqual(bm.state, .working, "the break should have ended naturally")
+        let movementEvents = movementEventsRecorded(since: mark)
+        XCTAssertEqual(movementEvents.count, 1, "a completed movement long break should record exactly one movement verification event")
+        XCTAssertEqual(movementEvents.first?.moved, true, "idle for essentially the whole break should verify as moved")
+    }
+
+    func testMovementBreakNaturalCompletionWithInputNearEndRecordsNotMoved() {
+        settings.longBreakEnabled = true
+        settings.movementBreaksEnabled = true
+        settings.longBreakDuration = 30
+        bm.resetForTesting()
+
+        IdleDetector.idleTimeOverrideForTesting = 2 // typed 2 seconds ago — recently active at the mouse/keyboard
+
+        bm.startLongBreakNow()
+        let mark = StatsManager.shared.todayStats.events.count
+        for _ in 0..<30 { bm.breakTick() }
+
+        XCTAssertEqual(bm.state, .working)
+        let movementEvents = movementEventsRecorded(since: mark)
+        XCTAssertEqual(movementEvents.count, 1)
+        XCTAssertEqual(movementEvents.first?.moved, false, "recent input right before break end should fail movement verification")
+    }
+
+    func testSkippedMovementBreakRecordsNoMovementEvent() {
+        settings.longBreakEnabled = true
+        settings.movementBreaksEnabled = true
+        settings.longBreakDuration = 30
+        bm.resetForTesting()
+
+        IdleDetector.idleTimeOverrideForTesting = 9999 // fully idle — but a skip must still record nothing
+
+        bm.startLongBreakNow()
+        XCTAssertTrue(bm.isMovementBreak)
+        let mark = StatsManager.shared.todayStats.events.count
+
+        bm.skipCurrentBreak()
+
+        XCTAssertEqual(bm.state, .working)
+        XCTAssertTrue(movementEventsRecorded(since: mark).isEmpty, "a skipped movement break must not record a verification outcome")
+    }
+
+    func testMovementBreaksDisabledLeavesLongBreakMessagesOnNormalPool() {
+        settings.longBreakEnabled = true
+        settings.movementBreaksEnabled = false
+        bm.resetForTesting()
+
+        bm.startLongBreakNow()
+
+        XCTAssertFalse(bm.isMovementBreak, "movement breaks disabled should never flag a break as a movement break")
+        XCTAssertTrue(settings.customMessages.contains(bm.currentMessage), "with movement breaks disabled, long breaks should still draw from the normal custom message pool")
+
+        let mark = StatsManager.shared.todayStats.events.count
+        bm.endBreak(isLong: true)
+        XCTAssertTrue(movementEventsRecorded(since: mark).isEmpty, "no movement verification should be recorded when the feature is disabled")
+    }
+
+    /// Regression test for the elapsed-time math: a mid-break snooze extends
+    /// `currentBreakDuration`, not `secondsIntoBreak`, so verification must
+    /// measure against the break's true total elapsed time (original duration
+    /// + snooze), never the stale pre-snooze duration.
+    func testMovementBreakVerificationUsesElapsedTimeIncludingSnoozeExtension() {
+        settings.longBreakEnabled = true
+        settings.movementBreaksEnabled = true
+        settings.longBreakDuration = 10 // short original duration
+        bm.resetForTesting()
+
+        // Idle for 20s: more than the original 10s duration (so a buggy
+        // implementation comparing against the stale pre-snooze duration
+        // would wrongly call this "moved"), but well short of the true 40s
+        // elapsed once the snooze is accounted for.
+        IdleDetector.idleTimeOverrideForTesting = 20
+
+        bm.startLongBreakNow()
+        for _ in 0..<8 { bm.breakTick() } // most of the way through the original 10s
+        bm.snoozeBreak(extraSeconds: 30) // currentBreakDuration: 10 -> 40
+
+        let mark = StatsManager.shared.todayStats.events.count
+        for _ in 0..<32 { bm.breakTick() } // 8 + 32 = 40, reaching the extended duration
+
+        XCTAssertEqual(bm.state, .working, "the snoozed break should have ended naturally")
+        let movementEvents = movementEventsRecorded(since: mark)
+        XCTAssertEqual(movementEvents.count, 1)
+        XCTAssertEqual(movementEvents.first?.moved, false, "verification must use the true elapsed time (40s) including the snooze extension, not the original pre-snooze duration (10s)")
     }
 }

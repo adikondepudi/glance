@@ -31,6 +31,8 @@ Glance runs as a menu bar app — look for the icon in the top-right of your scr
 
 **Stats** — Track breaks taken, screen time, and screen score. Activity timeline shows your day at a glance — working, breaks, and idle periods.
 
+**Movement Breaks** — Turn long breaks into a chance to get up and move, with prompts to walk, stretch, or refill your water. Verifies you actually stepped away using input idle time — no camera, no tracking, entirely on-device.
+
 **Wellness** — Optional blink and posture reminders via macOS notifications.
 
 **Customization** — Choose break backgrounds (gradients, solid colors, custom images), sounds, custom messages, and skip difficulty (casual, balanced, or hardcore). Option to lock screen on break or delay breaks while typing.

@@ -85,6 +85,15 @@ class StatsManager: ObservableObject {
         scheduleSave()
     }
 
+    /// Records the outcome of input-idle verification for a completed
+    /// movement long break: `moved` is true when the user was away from the
+    /// keyboard/mouse for essentially the whole break.
+    func recordMovementBreak(moved: Bool) {
+        let event = StatsEvent(type: .movementBreak, moved: moved)
+        todayStats.events.append(event)
+        scheduleSave()
+    }
+
     // MARK: - Screen Time Tracking
 
     private func startScreenTimeTracking() {

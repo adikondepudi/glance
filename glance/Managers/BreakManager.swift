@@ -26,6 +26,7 @@ class BreakManager: ObservableObject {
     @Published var totalScreenTime: TimeInterval = 0
     @Published var isPausedByUser: Bool = false
     @Published var currentMessage: String = ""
+    @Published var isMovementBreak: Bool = false
     @Published var secondsSinceLastBreak: Int = 0
     @Published var breaksSkippedCount: Int = 0
     @Published var postponeCountToday: Int = 0
@@ -268,7 +269,7 @@ class BreakManager: ObservableObject {
             isLong = settings.longBreakEnabled && (shortBreakCount + 1) % (settings.longBreakInterval + 1) == 0
         }
 
-        currentMessage = randomMessage()
+        currentMessage = randomMessage(isLong: isLong)
         startBreak(isLong: isLong)
     }
 
@@ -283,6 +284,7 @@ class BreakManager: ObservableObject {
         }
         currentBreakDuration = duration
         secondsIntoBreak = 0
+        isMovementBreak = isLong && settings.movementBreaksEnabled
         state = .onBreak(isLong: isLong)
 
         // Stats: record break started
@@ -369,6 +371,8 @@ class BreakManager: ObservableObject {
 
         // Stats
         stats.recordBreakCompleted(isLong: isLong)
+        recordMovementVerificationIfNeeded(wasSkipped: wasSkipped)
+        isMovementBreak = false
 
         // Reset consecutive skip counter on a genuinely completed break — but
         // not when this end was itself a skip (see the `wasSkipped` doc above).
@@ -441,7 +445,7 @@ class BreakManager: ObservableObject {
         } else {
             isLong = settings.longBreakEnabled && (shortBreakCount + 1) % (settings.longBreakInterval + 1) == 0
         }
-        currentMessage = randomMessage()
+        currentMessage = randomMessage(isLong: isLong)
         startBreak(isLong: isLong)
     }
 
@@ -450,7 +454,7 @@ class BreakManager: ObservableObject {
         workTimer?.invalidate()
         reminderDismissTimer?.invalidate()
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
-        currentMessage = randomMessage()
+        currentMessage = randomMessage(isLong: true)
         startBreak(isLong: true)
     }
 
@@ -690,8 +694,9 @@ class BreakManager: ObservableObject {
             reminderDismissTimer?.invalidate()
             NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
 
-            currentMessage = sb.name.isEmpty ? randomMessage() : sb.name
-            startBreak(isLong: sb.durationSeconds >= 120, durationOverride: sb.durationSeconds)
+            let isLong = sb.durationSeconds >= 120
+            currentMessage = sb.name.isEmpty ? randomMessage(isLong: isLong) : sb.name
+            startBreak(isLong: isLong, durationOverride: sb.durationSeconds)
             return
         }
     }
@@ -782,9 +787,68 @@ class BreakManager: ObservableObject {
 
     // MARK: - Helpers
 
-    private func randomMessage() -> String {
+    /// Built-in prompts shown for a movement long break instead of the
+    /// user's normal custom message list — see `randomMessage(isLong:)`.
+    private static let movementMessages: [String] = [
+        "Walk a loop around your home",
+        "Refill your water bottle",
+        "10 bodyweight squats",
+        "Stretch your hip flexors — deep lunge, each side",
+        "Doorway chest stretch",
+        "Shoulder rolls and a neck stretch",
+        "Step outside for fresh air",
+        "Calf raises while you wait",
+        "Walk while you take that call",
+        "Touch your toes and hang for 30 seconds"
+    ]
+
+    /// Picks the message to show for the next break. When `isLong` and
+    /// movement breaks are enabled, this draws from the built-in movement
+    /// prompt pool instead of the user's custom message list — short breaks
+    /// (the default `isLong: false`) and long breaks with the feature off are
+    /// untouched.
+    private func randomMessage(isLong: Bool = false) -> String {
+        if isLong && settings.movementBreaksEnabled {
+            return Self.movementMessages.randomElement() ?? "Stand up and move for a few minutes"
+        }
         let messages = settings.customMessages
         return messages.randomElement() ?? "Look away and rest your eyes"
+    }
+
+    /// How much idle time right at break end is tolerated as "just reaching
+    /// back for the mouse/keyboard" rather than proof the user never left —
+    /// see `recordMovementVerificationIfNeeded`.
+    private static let movementVerificationGraceSeconds: TimeInterval = 15
+
+    /// For a movement long break that just ended, records (via StatsManager)
+    /// whether the user actually stepped away.
+    ///
+    /// Verification is input-idle only, matching the app's no-camera,
+    /// on-device privacy stance: if `IdleDetector`'s idle time at break end is
+    /// at least the break's total elapsed time minus a ~15s grace period,
+    /// there was essentially no keyboard/mouse input for the whole break.
+    ///
+    /// `secondsIntoBreak` — not `currentBreakDuration` — is used as the
+    /// elapsed time. `secondsIntoBreak` is a plain per-second counter that
+    /// runs continuously from the moment the break starts; `snoozeBreak(extraSeconds:)`
+    /// only raises the `currentBreakDuration` threshold `breakTimerTick`
+    /// compares it against, it never resets or otherwise adjusts
+    /// `secondsIntoBreak` itself. So whether or not the break was snoozed
+    /// mid-way, by the time it ends `secondsIntoBreak` already equals the
+    /// true wall-clock time spent on break.
+    ///
+    /// No-op for short breaks, breaks started while movement breaks are
+    /// disabled, and skipped breaks (`wasSkipped`) — a skip isn't "ran to
+    /// completion", so there's nothing honest to verify.
+    private func recordMovementVerificationIfNeeded(wasSkipped: Bool) {
+        guard isMovementBreak, !wasSkipped else { return }
+
+        let elapsed = TimeInterval(secondsIntoBreak)
+        let idleTime = idleDetector.systemIdleTime
+        let moved = idleTime >= max(0, elapsed - Self.movementVerificationGraceSeconds)
+
+        stats.recordMovementBreak(moved: moved)
+        // TODO: garden credit for verified movement once garden merges
     }
 
     /// The single gate behind `settings.delayWhileTyping`: true if the user is
@@ -930,6 +994,7 @@ class BreakManager: ObservableObject {
         typingDelayRetries = 0
         wasSmartPaused = false
         isPausedByUser = false
+        isMovementBreak = false
         breaksSkippedCount = 0
         postponeCountToday = 0
         pomodoroCycle = 0

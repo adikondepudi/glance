@@ -84,6 +84,12 @@ struct BreaksTab: View {
                             Text("10 minutes").tag(600)
                             Text("15 minutes").tag(900)
                         }
+
+                        Toggle("Make long breaks movement breaks", isOn: $settings.movementBreaksEnabled)
+
+                        Text("Long breaks will prompt you to stand, walk, or stretch. Glance verifies you actually stepped away using input idle time — no camera, no tracking, all on-device.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }

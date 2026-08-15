@@ -137,6 +137,7 @@ class AppSettings: ObservableObject {
     @AppStorage("longBreakEnabled") var longBreakEnabled: Bool = false
     @AppStorage("longBreakInterval") var longBreakInterval: Int = 3 // every N short breaks
     @AppStorage("longBreakDuration") var longBreakDuration: Int = 300 // seconds (5 min)
+    @AppStorage("movementBreaksEnabled") var movementBreaksEnabled: Bool = false
 
     // MARK: Timer Mode (Pomodoro)
     @AppStorage("timerModeRaw") var timerModeRaw: String = TimerMode.interval.rawValue

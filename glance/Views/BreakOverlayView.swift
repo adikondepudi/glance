@@ -26,12 +26,20 @@ struct BreakOverlayView: View {
 
                 Spacer().frame(height: 32)
 
-                // Message
-                Text(breakManager.currentMessage)
-                    .font(.system(size: 24, weight: .light, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 80)
+                // Message, with a subtle movement cue on movement breaks
+                VStack(spacing: 12) {
+                    if breakManager.isMovementBreak {
+                        Image(systemName: "figure.walk")
+                            .font(.system(size: 20, weight: .light))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+
+                    Text(breakManager.currentMessage)
+                        .font(.system(size: 24, weight: .light, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 80)
+                }
 
                 Spacer().frame(height: 48)
 
