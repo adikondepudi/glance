@@ -18,7 +18,16 @@ class StatsManager: ObservableObject {
         return formatter
     }()
 
+    /// Testing hook: redirects on-disk persistence to a scratch location so
+    /// unit tests (which run hosted inside the real com.glance.app bundle,
+    /// sharing its Application Support directory) never read or write the
+    /// developer's real stats history. `nil` (default) uses the normal path.
+    static var statsDirectoryOverrideForTesting: URL?
+
     private var statsDirectory: URL {
+        if let override = Self.statsDirectoryOverrideForTesting {
+            return override
+        }
         guard let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
             return fileManager.temporaryDirectory.appendingPathComponent("com.glance.app/stats")
         }

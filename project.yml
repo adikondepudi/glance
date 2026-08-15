@@ -28,3 +28,40 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
         ENABLE_HARDENED_RUNTIME: YES
+
+  glanceTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - glanceTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.glance.glanceTests
+        # xcodegen does not infer these for app-hosted unit tests — point the
+        # test bundle at the glance.app binary built alongside it so it can
+        # run in-process (@testable import glance, shared UserDefaults, etc.)
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/glance.app/Contents/MacOS/glance"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks"
+    dependencies:
+      - target: glance
+
+schemes:
+  glance:
+    build:
+      targets:
+        glance: [run, test, profile, analyze, archive]
+        glanceTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - glanceTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

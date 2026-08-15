@@ -80,7 +80,11 @@ class BreakManager: ObservableObject {
         let timer = Timer(timeInterval: interval, repeats: true) { _ in
             Task { @MainActor in action() }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        // Under unit tests we never want this actually firing on the run loop —
+        // tests drive ticks manually via tick()/breakTick() for determinism.
+        if !Self.disableAutomaticTimersForTesting {
+            RunLoop.main.add(timer, forMode: .common)
+        }
         return timer
     }
 
@@ -211,6 +215,11 @@ class BreakManager: ObservableObject {
         state = .reminding
         currentMessage = randomMessage()
         NotificationCenter.default.post(name: .showBreakReminder, object: nil)
+
+        // Under unit tests, skip scheduling the auto-dismiss — tests assert the
+        // .reminding transition synchronously and don't want a real-time timer
+        // flipping state back to .working mid-suite.
+        guard !Self.disableAutomaticTimersForTesting else { return }
 
         reminderDismissTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(settings.reminderVisibleDuration), repeats: false) { [weak self] _ in
             Task { @MainActor in
@@ -438,6 +447,7 @@ class BreakManager: ObservableObject {
 
     func pauseTemporarily(seconds: Int) {
         pauseByUser()
+        guard !Self.disableAutomaticTimersForTesting else { return }
         let timer = Timer(timeInterval: TimeInterval(seconds), repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.resumeByUser()
@@ -485,21 +495,34 @@ class BreakManager: ObservableObject {
         guard state == .working || state == .reminding || isSmartPaused else { return }
 
         if let reason = smartPause.currentPauseReason() {
-            if !isSmartPaused {
-                workTimer?.invalidate()
-                NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
-                wasSmartPaused = true
-            }
-            state = .smartPaused(reason: reason)
+            enterSmartPause(reason: reason)
         } else if isSmartPaused {
-            // Activity ended — resume with the time that was remaining, but leave
-            // at least the cooldown so a break doesn't fire right after a meeting.
-            wasSmartPaused = false
-            secondsUntilBreak = max(secondsUntilBreak, settings.smartPauseCooldown)
-            rearmReminderIfBeyondLeadTime(for: secondsUntilBreak)
-            state = .working
-            startWorkTimer()
+            resumeFromSmartPause()
         }
+    }
+
+    /// The "activity detected" half of `checkSmartPause()`, split out so tests
+    /// can drive it without depending on the real system checks in
+    /// `SmartPauseManager` (meeting/video/recording detection).
+    func enterSmartPause(reason: String) {
+        if !isSmartPaused {
+            workTimer?.invalidate()
+            NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
+            wasSmartPaused = true
+        }
+        state = .smartPaused(reason: reason)
+    }
+
+    /// The "activity ended" half of `checkSmartPause()` — resume with the time
+    /// that was remaining, but leave at least the cooldown so a break doesn't
+    /// fire right after a meeting. Split out so tests can drive it directly.
+    func resumeFromSmartPause() {
+        guard isSmartPaused else { return }
+        wasSmartPaused = false
+        secondsUntilBreak = max(secondsUntilBreak, settings.smartPauseCooldown)
+        rearmReminderIfBeyondLeadTime(for: secondsUntilBreak)
+        state = .working
+        startWorkTimer()
     }
 
     private var isSmartPaused: Bool {
@@ -677,6 +700,7 @@ class BreakManager: ObservableObject {
     }
 
     private func scheduleNextScheduleCheck() {
+        guard !Self.disableAutomaticTimersForTesting else { return }
         let timer = Timer(timeInterval: 60, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -779,6 +803,62 @@ class BreakManager: ObservableObject {
             return String(format: "%d:%02d", mins, secs)
         }
         return "\(secs)s"
+    }
+
+    // MARK: - Testing Support
+    //
+    // These hooks exist so glanceTests can drive the state machine
+    // deterministically — never sleeping on real wall-clock timers and never
+    // racing the shared instance's own background timers. They have no effect
+    // on the shipped app: `disableAutomaticTimersForTesting` defaults to false
+    // and every other helper here just re-exposes existing private logic.
+
+    /// When true, none of BreakManager's periodic/delayed timers are actually
+    /// scheduled on the run loop — callers must drive ticks manually via
+    /// `tick()` / `breakTick()`. Only ever set by test code.
+    static var disableAutomaticTimersForTesting = false
+
+    /// Stops every timer owned by the shared instance and restores a clean
+    /// `.working` state based on current settings, so each test starts from a
+    /// known, deterministic baseline. Also flips
+    /// `disableAutomaticTimersForTesting` on for the remainder of the process.
+    func resetForTesting() {
+        Self.disableAutomaticTimersForTesting = true
+
+        workTimer?.invalidate()
+        breakTimer?.invalidate()
+        reminderDismissTimer?.invalidate()
+        pauseResumeTimer?.invalidate()
+        watchdogTimer?.invalidate()
+        smartPauseMonitorTimer?.invalidate()
+        idleMonitorTimer?.invalidate()
+
+        typingDelayRetries = 0
+        wasSmartPaused = false
+        isPausedByUser = false
+        breaksSkippedCount = 0
+        postponeCountToday = 0
+        pomodoroCycle = 0
+        shortBreakCount = 0
+        secondsSinceLastBreak = 0
+        lastTriggeredScheduledBreaks.removeAll()
+        lastScheduledBreakCheckMinute = -1
+
+        resetWorkTimer()
+    }
+
+    /// Advances the work/reminder countdown by one simulated second — the same
+    /// logic the real 1-second work timer calls in production.
+    func tick() {
+        workTimerTick()
+    }
+
+    /// Advances the break countdown by one simulated second, if currently on a
+    /// break — the same logic the real 1-second break timer calls in
+    /// production. No-op otherwise.
+    func breakTick() {
+        guard case .onBreak(let isLong) = state else { return }
+        breakTimerTick(isLong: isLong)
     }
 }
 
