@@ -163,9 +163,15 @@ struct BreakOverlayView: View {
 
 // MARK: - Break Window Controller (one per screen)
 
+// Borderless windows refuse key status by default, which would leave keyboard
+// events (double-Escape skip) going to the previously frontmost app.
+private final class BreakOverlayWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+}
+
 class BreakWindowController: NSWindowController {
     convenience init(screen: NSScreen) {
-        let window = NSWindow(
+        let window = BreakOverlayWindow(
             contentRect: screen.frame,
             styleMask: [.borderless],
             backing: .buffered,

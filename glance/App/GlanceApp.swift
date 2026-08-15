@@ -30,8 +30,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var escapeMonitor: Any?
     private var menuBarTimer: Timer?
     private var lastEscapeTime: Date?
+    private var appNapActivity: NSObjectProtocol?
+    private var overlayMismatchTicks = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Prevent App Nap from throttling our timers — the whole app is timers.
+        // Does not prevent the system from sleeping.
+        appNapActivity = ProcessInfo.processInfo.beginActivity(
+            options: .userInitiatedAllowingIdleSystemSleep,
+            reason: "Break timers must stay accurate"
+        )
+
         setupMenuBar()
         setupNotificationObservers()
         setupSettingsWindowObserver()
@@ -89,11 +98,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 .environmentObject(AppSettings.shared)
         )
 
-        // Update menu bar timer
-        menuBarTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        // Update menu bar timer (.common mode so it keeps firing while menus/popovers track)
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.updateMenuBarTitle()
+                self?.healOverlayStateMismatch()
             }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        menuBarTimer = timer
+    }
+
+    // Self-heal for the classic "stuck full-screen overlay" failure: if the break
+    // windows and the state machine disagree for a few consecutive seconds,
+    // trust the state machine and fix the windows.
+    @MainActor
+    private func healOverlayStateMismatch() {
+        let isOnBreak: Bool
+        if case .onBreak = breakManager.state { isOnBreak = true } else { isOnBreak = false }
+
+        let mismatch = (isOnBreak && breakWindowControllers.isEmpty) ||
+                       (!isOnBreak && !breakWindowControllers.isEmpty)
+        guard mismatch else {
+            overlayMismatchTicks = 0
+            return
+        }
+
+        overlayMismatchTicks += 1
+        guard overlayMismatchTicks >= 3 else { return }
+        overlayMismatchTicks = 0
+        if isOnBreak {
+            showBreakOverlay()
+        } else {
+            dismissBreakOverlay()
         }
     }
 
@@ -359,6 +396,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             controller.showWindow(nil)
             breakWindowControllers.append(controller)
         }
+
+        // Make the overlay key and activate so keyboard events (double-Escape)
+        // reach us instead of whatever app was frontmost.
+        NSApp.activate(ignoringOtherApps: true)
+        breakWindowControllers.first?.window?.makeKeyAndOrderFront(nil)
 
         // Double-escape to skip (#4)
         installEscapeMonitor()

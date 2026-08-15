@@ -79,15 +79,25 @@ class StatsManager: ObservableObject {
     // MARK: - Screen Time Tracking
 
     private func startScreenTimeTracking() {
-        screenTimeTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.recordScreenTimeMinute()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        screenTimeTimer = timer
     }
 
     private func recordScreenTimeMinute() {
         ensureTodayDate()
+        // Only count minutes actively spent working — not idle, paused,
+        // on break, or outside schedule (matches BreakManager.totalScreenTime)
+        switch BreakManager.shared.state {
+        case .working, .reminding:
+            break
+        default:
+            return
+        }
         let event = StatsEvent(type: .screenTimeMinute)
         todayStats.events.append(event)
         scheduleSave()

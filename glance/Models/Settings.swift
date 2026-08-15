@@ -154,8 +154,6 @@ class AppSettings: ObservableObject {
     @AppStorage("showPreBreakReminder") var showPreBreakReminder: Bool = true
     @AppStorage("preBreakReminderSeconds") var preBreakReminderSeconds: Int = 60
     @AppStorage("reminderVisibleDuration") var reminderVisibleDuration: Int = 10
-    @AppStorage("showOvertimeNudge") var showOvertimeNudge: Bool = false
-    @AppStorage("overtimeNudgeMinutes") var overtimeNudgeMinutes: Int = 5
 
     // MARK: Smart Pause
     @AppStorage("detectMeetings") var detectMeetings: Bool = true

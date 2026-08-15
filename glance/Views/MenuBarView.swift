@@ -137,10 +137,13 @@ struct MenuBarView: View {
     }
 
     private var workProgress: Double {
-        let total = Double(settings.shortBreakInterval * 60)
-        let remaining = Double(breakManager.secondsUntilBreak)
+        let totalMinutes = settings.timerMode == .pomodoro
+            ? settings.pomodoroWorkMinutes
+            : settings.shortBreakInterval
+        let total = Double(totalMinutes * 60)
         guard total > 0 else { return 0 }
-        return 1.0 - (remaining / total)
+        let progress = 1.0 - (Double(breakManager.secondsUntilBreak) / total)
+        return min(max(progress, 0), 1)
     }
 
     // MARK: - Actions

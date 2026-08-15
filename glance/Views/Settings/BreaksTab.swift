@@ -190,8 +190,6 @@ struct BreaksTab: View {
                         Text("1 minute").tag(60)
                     }
                 }
-
-                Toggle("Show overtime nudge", isOn: $settings.showOvertimeNudge)
             }
 
             Section("Postpone Limits") {

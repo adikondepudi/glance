@@ -24,7 +24,6 @@ class BreakManager: ObservableObject {
     @Published var totalScreenTime: TimeInterval = 0
     @Published var isPausedByUser: Bool = false
     @Published var currentMessage: String = ""
-    @Published var overtimeSeconds: Int = 0
     @Published var secondsSinceLastBreak: Int = 0
     @Published var breaksSkippedCount: Int = 0
     @Published var postponeCountToday: Int = 0
@@ -39,8 +38,10 @@ class BreakManager: ObservableObject {
 
     private var workTimer: Timer?
     private var breakTimer: Timer?
-    private var overtimeTimer: Timer?
     private var reminderDismissTimer: Timer?
+    private var pauseResumeTimer: Timer?
+    private var watchdogTimer: Timer?
+    private var typingDelayRetries = 0
     private var sessionStartDate = Date()
     private var wasSmartPaused = false
     private var smartPauseMonitorTimer: Timer?
@@ -64,8 +65,20 @@ class BreakManager: ObservableObject {
         startIdleMonitoring()
         startSmartPauseMonitoring()
         startSystemSleepMonitoring()
+        startWatchdog()
         observeSettingsChanges()
         restoreStatsFromDisk()
+    }
+
+    // Timers scheduled via Timer.scheduledTimer only fire in the default run loop
+    // mode, which pauses while a menu or popover is tracking. Use .common so the
+    // countdown never silently stalls.
+    private func repeatingTimer(every interval: TimeInterval, _ action: @escaping @MainActor () -> Void) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: true) { _ in
+            Task { @MainActor in action() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
     }
 
     private func restoreStatsFromDisk() {
@@ -113,10 +126,6 @@ class BreakManager: ObservableObject {
     // MARK: - Work Timer
 
     func resetWorkTimer() {
-        workTimer?.invalidate()
-        overtimeTimer?.invalidate()
-        overtimeSeconds = 0
-
         if settings.timerMode == .pomodoro {
             secondsUntilBreak = settings.pomodoroWorkMinutes * 60
         } else {
@@ -126,12 +135,13 @@ class BreakManager: ObservableObject {
         sessionStartDate = Date()
         state = .working
         NotificationCenter.default.post(name: .enteredWorkingState, object: nil)
+        startWorkTimer()
+    }
 
-        workTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.workTimerTick()
-            }
-        }
+    /// Restarts the 1-second work timer without resetting the countdown.
+    private func startWorkTimer() {
+        workTimer?.invalidate()
+        workTimer = repeatingTimer(every: 1.0) { [weak self] in self?.workTimerTick() }
     }
 
     private func workTimerTick() {
@@ -193,18 +203,29 @@ class BreakManager: ObservableObject {
 
     // MARK: - Break Sequence
 
-    private func startBreakSequence() {
+    private func startBreakSequence(isRetry: Bool = false) {
+        // A pending retry is only valid while we're still in the limbo it created:
+        // if the user paused, went idle, or a fresh work timer is running, abandon it.
+        if isRetry {
+            guard state == .working || state == .reminding, workTimer?.isValid != true else {
+                typingDelayRetries = 0
+                return
+            }
+        }
+
         workTimer?.invalidate()
         reminderDismissTimer?.invalidate()
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
 
-        if settings.delayWhileTyping && isUserTyping() {
-            // Delay briefly and retry
+        if settings.delayWhileTyping && isUserTyping() && typingDelayRetries < 20 {
+            // Delay briefly and retry (capped at ~1 minute of deferral)
+            typingDelayRetries += 1
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                self?.startBreakSequence()
+                self?.startBreakSequence(isRetry: true)
             }
             return
         }
+        typingDelayRetries = 0
 
         // Determine if long break
         let isLong: Bool
@@ -218,9 +239,11 @@ class BreakManager: ObservableObject {
         startBreak(isLong: isLong)
     }
 
-    func startBreak(isLong: Bool) {
+    func startBreak(isLong: Bool, durationOverride: Int? = nil) {
         let duration: Int
-        if settings.timerMode == .pomodoro {
+        if let durationOverride {
+            duration = durationOverride
+        } else if settings.timerMode == .pomodoro {
             duration = isLong ? settings.pomodoroLongBreakSeconds : settings.pomodoroShortBreakSeconds
         } else {
             duration = isLong ? settings.longBreakDuration : settings.shortBreakDuration
@@ -258,11 +281,8 @@ class BreakManager: ObservableObject {
 
         NotificationCenter.default.post(name: .showBreakOverlay, object: isLong)
 
-        breakTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.breakTimerTick(isLong: isLong)
-            }
-        }
+        breakTimer?.invalidate()
+        breakTimer = repeatingTimer(every: 1.0) { [weak self] in self?.breakTimerTick(isLong: isLong) }
     }
 
     private func breakTimerTick(isLong: Bool) {
@@ -317,6 +337,11 @@ class BreakManager: ObservableObject {
     // MARK: - User Actions
 
     func skipBreak() {
+        // Mid-break skips must go through skipCurrentBreak so the break timer is stopped
+        if case .onBreak = state {
+            skipCurrentBreak()
+            return
+        }
         if settings.skipDifficulty == .hardcore { return }
         reminderDismissTimer?.invalidate()
         breaksSkippedCount += 1
@@ -349,31 +374,38 @@ class BreakManager: ObservableObject {
         stats.recordBreakPostponed()
         secondsUntilBreak = seconds
         state = .working
-
-        workTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.workTimerTick()
-            }
-        }
+        startWorkTimer()
     }
 
     func startBreakNow() {
+        if case .onBreak = state { return }
         workTimer?.invalidate()
         reminderDismissTimer?.invalidate()
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
 
-        let isLong = settings.longBreakEnabled && (shortBreakCount + 1) % (settings.longBreakInterval + 1) == 0
+        let isLong: Bool
+        if settings.timerMode == .pomodoro {
+            isLong = (pomodoroCycle + 1) % settings.pomodoroLongBreakAfter == 0
+        } else {
+            isLong = settings.longBreakEnabled && (shortBreakCount + 1) % (settings.longBreakInterval + 1) == 0
+        }
+        currentMessage = randomMessage()
         startBreak(isLong: isLong)
     }
 
     func startLongBreakNow() {
+        if case .onBreak = state { return }
         workTimer?.invalidate()
         reminderDismissTimer?.invalidate()
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
+        currentMessage = randomMessage()
         startBreak(isLong: true)
     }
 
     func pauseByUser() {
+        // A manual pause cancels any scheduled auto-resume from pauseTemporarily
+        pauseResumeTimer?.invalidate()
+        pauseResumeTimer = nil
         workTimer?.invalidate()
         breakTimer?.invalidate()
         isPausedByUser = true
@@ -384,14 +416,18 @@ class BreakManager: ObservableObject {
 
     func pauseTemporarily(seconds: Int) {
         pauseByUser()
-        Timer.scheduledTimer(withTimeInterval: TimeInterval(seconds), repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: TimeInterval(seconds), repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.resumeByUser()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        pauseResumeTimer = timer
     }
 
     func resumeByUser() {
+        pauseResumeTimer?.invalidate()
+        pauseResumeTimer = nil
         isPausedByUser = false
         resetWorkTimer()
     }
@@ -418,11 +454,7 @@ class BreakManager: ObservableObject {
 
     private func startSmartPauseMonitoring() {
         smartPauseMonitorTimer?.invalidate()
-        smartPauseMonitorTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkSmartPause()
-            }
-        }
+        smartPauseMonitorTimer = repeatingTimer(every: 5.0) { [weak self] in self?.checkSmartPause() }
     }
 
     private func checkSmartPause() {
@@ -437,19 +469,12 @@ class BreakManager: ObservableObject {
             }
             state = .smartPaused(reason: reason)
         } else if isSmartPaused {
-            // Activity ended — apply cooldown
-            if settings.smartPauseCooldown > 0 && wasSmartPaused {
-                wasSmartPaused = false
-                secondsUntilBreak = settings.smartPauseCooldown
-                state = .working
-                workTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                    Task { @MainActor in
-                        self?.workTimerTick()
-                    }
-                }
-            } else {
-                resetWorkTimer()
-            }
+            // Activity ended — resume with the time that was remaining, but leave
+            // at least the cooldown so a break doesn't fire right after a meeting.
+            wasSmartPaused = false
+            secondsUntilBreak = max(secondsUntilBreak, settings.smartPauseCooldown)
+            state = .working
+            startWorkTimer()
         }
     }
 
@@ -462,11 +487,7 @@ class BreakManager: ObservableObject {
 
     private func startIdleMonitoring() {
         idleMonitorTimer?.invalidate()
-        idleMonitorTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.checkIdle()
-            }
-        }
+        idleMonitorTimer = repeatingTimer(every: 5.0) { [weak self] in self?.checkIdle() }
     }
 
     private func checkIdle() {
@@ -577,24 +598,14 @@ class BreakManager: ObservableObject {
             guard !lastTriggeredScheduledBreaks.contains(sb.id) else { continue }
 
             lastTriggeredScheduledBreaks.insert(sb.id)
-            // Start a break with the scheduled duration
+            // Route through the normal break path so sounds, stats, automations,
+            // and lock-on-break all apply to scheduled breaks too
             workTimer?.invalidate()
             reminderDismissTimer?.invalidate()
             NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
 
-            let isLong = sb.durationSeconds >= 120
-            currentBreakDuration = sb.durationSeconds
-            secondsIntoBreak = 0
-            state = .onBreak(isLong: isLong)
             currentMessage = sb.name.isEmpty ? randomMessage() : sb.name
-
-            NotificationCenter.default.post(name: .showBreakOverlay, object: isLong)
-
-            breakTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    self?.breakTimerTick(isLong: isLong)
-                }
-            }
+            startBreak(isLong: sb.durationSeconds >= 120, durationOverride: sb.durationSeconds)
             return
         }
     }
@@ -642,14 +653,43 @@ class BreakManager: ObservableObject {
     }
 
     private func scheduleNextScheduleCheck() {
-        Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: 60, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                if self?.isWithinSchedule() == true {
-                    self?.resetWorkTimer()
+                guard let self else { return }
+                // If the user paused or started a manual break meanwhile, stop —
+                // the normal state transitions take over from there.
+                guard self.state == .outsideSchedule else { return }
+                if self.isWithinSchedule() {
+                    self.resetWorkTimer()
                 } else {
-                    self?.scheduleNextScheduleCheck()
+                    self.scheduleNextScheduleCheck()
                 }
             }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    // MARK: - Watchdog
+
+    // Self-heal: if a state says a timer should be running but it died (e.g. a
+    // missed transition or an exception path), restart it instead of staying
+    // stuck until the app is relaunched.
+    private func startWatchdog() {
+        watchdogTimer = repeatingTimer(every: 30) { [weak self] in self?.watchdogCheck() }
+    }
+
+    private func watchdogCheck() {
+        switch state {
+        case .working, .reminding:
+            if workTimer?.isValid != true && typingDelayRetries == 0 {
+                startWorkTimer()
+            }
+        case .onBreak(let isLong):
+            if breakTimer?.isValid != true {
+                endBreak(isLong: isLong)
+            }
+        case .paused, .smartPaused, .idle, .outsideSchedule:
+            break
         }
     }
 
