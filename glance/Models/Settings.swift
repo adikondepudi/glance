@@ -41,6 +41,26 @@ enum SmartPauseVideoMode: String, CaseIterable, Codable {
     case background = "Running in Background Too"
 }
 
+// Raw values match the strings already persisted by early releases
+// ("gradient", "solid", "image") — do not rename or reorder existing cases.
+enum BreakBackgroundStyle: String, CaseIterable, Codable {
+    case gradient
+    case solid
+    case image
+    case blur
+    case animatedGradient
+
+    var displayName: String {
+        switch self {
+        case .gradient: return "Gradient"
+        case .solid: return "Solid Color"
+        case .image: return "Image"
+        case .blur: return "Blurred Screen"
+        case .animatedGradient: return "Animated Gradient"
+        }
+    }
+}
+
 enum DeepFocusMode: String, CaseIterable, Codable {
     case foregroundFullscreen = "Foreground & Fullscreen"
     case foreground = "Foreground"
@@ -180,7 +200,11 @@ class AppSettings: ObservableObject {
     @AppStorage("resetWellnessAfterBreak") var resetWellnessAfterBreak: Bool = true
 
     // MARK: Appearance
-    @AppStorage("breakBackgroundStyle") var breakBackgroundStyle: String = "gradient" // gradient, solid, image
+    @AppStorage("breakBackgroundStyle") var breakBackgroundStyleRaw: String = BreakBackgroundStyle.gradient.rawValue
+    var breakBackgroundStyle: BreakBackgroundStyle {
+        get { BreakBackgroundStyle(rawValue: breakBackgroundStyleRaw) ?? .gradient }
+        set { breakBackgroundStyleRaw = newValue.rawValue }
+    }
     @AppStorage("breakGradientStart") var breakGradientStart: String = "#1a1a2e"
     @AppStorage("breakGradientEnd") var breakGradientEnd: String = "#16213e"
     @AppStorage("breakSolidColor") var breakSolidColor: String = "#1a1a2e"

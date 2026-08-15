@@ -7,15 +7,17 @@ struct AppearanceTab: View {
     var body: some View {
         Form {
             Section("Break Background") {
-                Picker("Style", selection: $settings.breakBackgroundStyle) {
-                    Text("Gradient").tag("gradient")
-                    Text("Solid Color").tag("solid")
-                    Text("Image").tag("image")
+                Picker("Style", selection: Binding(
+                    get: { settings.breakBackgroundStyle },
+                    set: { settings.breakBackgroundStyle = $0 }
+                )) {
+                    ForEach(BreakBackgroundStyle.allCases, id: \.self) { style in
+                        Text(style.displayName).tag(style)
+                    }
                 }
-                .pickerStyle(.segmented)
 
                 switch settings.breakBackgroundStyle {
-                case "gradient":
+                case .gradient, .animatedGradient:
                     HStack(spacing: 16) {
                         VStack {
                             Text("Start Color")
@@ -69,7 +71,13 @@ struct AppearanceTab: View {
                         presetButton("Purple", start: "#240046", end: "#10002b")
                     }
 
-                case "solid":
+                    if settings.breakBackgroundStyle == .animatedGradient {
+                        Text("These colors slowly drift during the break. Disabled automatically when Reduce Motion is on.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                case .solid:
                     HStack {
                         Text("Color")
                         ColorPicker("", selection: Binding(
@@ -85,7 +93,7 @@ struct AppearanceTab: View {
                             .frame(width: 120, height: 70)
                     }
 
-                case "image":
+                case .image:
                     HStack {
                         Text(settings.breakImagePath.isEmpty ? "No image selected" : URL(fileURLWithPath: settings.breakImagePath).lastPathComponent)
                             .foregroundStyle(.secondary)
@@ -105,8 +113,10 @@ struct AppearanceTab: View {
                         .foregroundStyle(.red)
                     }
 
-                default:
-                    EmptyView()
+                case .blur:
+                    Text("Your screen blurs behind the break message, like frosted glass.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
