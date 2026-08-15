@@ -327,7 +327,16 @@ class BreakManager: ObservableObject {
         }
     }
 
-    func endBreak(isLong: Bool) {
+    /// Ends the current break.
+    ///
+    /// - Parameter wasSkipped: true when this end was triggered by a mid-break
+    ///   skip (`skipCurrentBreak()`) rather than the break running its full
+    ///   duration (or the watchdog's dead-timer fallback). Skips — pre-break
+    ///   via `skipBreak()` or mid-break via `skipCurrentBreak()` — should have
+    ///   identical effects on the consecutive-skip streak, so a skip-driven end
+    ///   must NOT clear `breaksSkippedCount` the way a genuinely completed
+    ///   break does.
+    func endBreak(isLong: Bool, wasSkipped: Bool = false) {
         breakTimer?.invalidate()
 
         // Per-break-type sounds
@@ -359,8 +368,11 @@ class BreakManager: ObservableObject {
         // Stats
         stats.recordBreakCompleted(isLong: isLong)
 
-        // Reset consecutive skip counter on successful break
-        breaksSkippedCount = 0
+        // Reset consecutive skip counter on a genuinely completed break — but
+        // not when this end was itself a skip (see the `wasSkipped` doc above).
+        if !wasSkipped {
+            breaksSkippedCount = 0
+        }
 
         // Reset wellness timers after break if enabled
         if settings.resetWellnessAfterBreak {
@@ -393,7 +405,7 @@ class BreakManager: ObservableObject {
         if settings.skipDifficulty == .hardcore { return }
         breaksSkippedCount += 1
         stats.recordBreakSkipped()
-        endBreak(isLong: isLong)
+        endBreak(isLong: isLong, wasSkipped: true)
     }
 
     func endBreakEarly() {
@@ -464,11 +476,29 @@ class BreakManager: ObservableObject {
         pauseResumeTimer = timer
     }
 
+    /// Resumes from a manual pause with the time that was remaining when
+    /// paused, floored at `smartPauseCooldown` — exactly the same "restore,
+    /// don't restart" behavior as `resumeFromSmartPause()`. `secondsUntilBreak`
+    /// is left untouched by `pauseByUser()`, so it still holds the countdown
+    /// from the moment the user paused.
+    ///
+    /// Unlike `resumeFromSmartPause()`, a manual pause can be entered from
+    /// `.outsideSchedule` (smart pause can't — it only triggers from
+    /// `.working`/`.reminding`), so this still posts `.enteredWorkingState`
+    /// even though it isn't starting a fresh interval: `WindDownManager`
+    /// listens for that notification to stop an in-progress wind-down cycle,
+    /// and pausing/resuming through an off-hours wind-down must still turn it
+    /// off once we're back to working.
     func resumeByUser() {
+        guard state == .paused else { return }
         pauseResumeTimer?.invalidate()
         pauseResumeTimer = nil
         isPausedByUser = false
-        resetWorkTimer()
+        secondsUntilBreak = max(secondsUntilBreak, settings.smartPauseCooldown)
+        rearmReminderIfBeyondLeadTime(for: secondsUntilBreak)
+        state = .working
+        NotificationCenter.default.post(name: .enteredWorkingState, object: nil)
+        startWorkTimer()
     }
 
     func snoozeBreak(extraSeconds: Int) {

@@ -176,14 +176,43 @@ final class BreakManagerTests: XCTestCase {
         bm.skipBreak() // mid-break skip routes through skipCurrentBreak
         XCTAssertEqual(bm.state, .onBreak(isLong: false), "hardcore should block mid-break skipping too")
         XCTAssertEqual(bm.shortBreakCount, shortBreakCountBefore, "a blocked skip must not end the break")
+        XCTAssertEqual(bm.breaksSkippedCount, 0, "a blocked skip must not count either")
 
         settings.skipDifficultyRaw = SkipDifficulty.casual.rawValue
         bm.skipBreak()
-        // Note: endBreak() resets breaksSkippedCount to 0 as its "consecutive
-        // skip" bookkeeping, so it can't be asserted here — shortBreakCount is
-        // the reliable signal that the break was actually ended by the skip.
         XCTAssertEqual(bm.state, .working, "a successful mid-break skip ends the break and returns to working")
         XCTAssertEqual(bm.shortBreakCount, shortBreakCountBefore + 1, "the skipped break should still count as completed for cadence purposes")
+        // Fixed semantics (was previously dead code): endBreak() no longer
+        // unconditionally zeroes breaksSkippedCount out from under a mid-break
+        // skip — skipCurrentBreak()'s increment now actually sticks, the same
+        // as a before-break skipBreak() increment does.
+        XCTAssertEqual(bm.breaksSkippedCount, 1, "a mid-break skip must increment the consecutive-skip streak, not have it immediately reset to 0")
+    }
+
+    // MARK: - breaksSkippedCount: pre-break and mid-break skips share semantics
+
+    /// `breaksSkippedCount` is a "consecutive skips in a row" streak (surfaced
+    /// in BreakReminderView / BreakOverlayView as "You've skipped N breaks in a
+    /// row"). Both skip entry points — `skipBreak()` before a break starts and
+    /// `skipCurrentBreak()` mid-break — must contribute to that same streak,
+    /// and only an actually-completed break should clear it.
+    func testMidBreakSkipAndPreBreakSkipShareConsecutiveSkipStreak() {
+        settings.shortBreakInterval = 5
+        settings.shortBreakDuration = 20
+        bm.resetForTesting()
+
+        bm.skipBreak() // pre-break skip
+        XCTAssertEqual(bm.breaksSkippedCount, 1)
+
+        bm.startBreak(isLong: false)
+        bm.skipCurrentBreak() // mid-break skip
+        XCTAssertEqual(bm.state, .working)
+        XCTAssertEqual(bm.breaksSkippedCount, 2, "consecutive skips across both skip paths should accumulate")
+
+        bm.startBreak(isLong: false)
+        for _ in 0..<20 { bm.breakTick() } // let this one run to completion
+        XCTAssertEqual(bm.state, .working)
+        XCTAssertEqual(bm.breaksSkippedCount, 0, "a break that actually completes (not skipped) should reset the streak")
     }
 
     // MARK: - postpone honors its limits
@@ -219,6 +248,7 @@ final class BreakManagerTests: XCTestCase {
 
     func testPauseFreezesCountdownAndResumeReturnsToWorking() {
         settings.shortBreakInterval = 10 // 600s
+        settings.smartPauseCooldown = 120
         bm.resetForTesting()
 
         for _ in 0..<37 { bm.tick() }
@@ -238,11 +268,47 @@ final class BreakManagerTests: XCTestCase {
         bm.resumeByUser()
         XCTAssertEqual(bm.state, .working)
         XCTAssertFalse(bm.isPausedByUser)
+        // Fixed behavior: resuming a manual pause must restore the countdown
+        // that was remaining, not discard it for a brand-new full interval —
+        // exactly like resumeFromSmartPause() already does.
+        XCTAssertEqual(bm.secondsUntilBreak, remainingAtPause, "resume must preserve the pre-pause countdown, not reset to a fresh interval")
 
         // The work timer is functional again post-resume.
-        let afterResume = bm.secondsUntilBreak
         bm.tick()
-        XCTAssertEqual(bm.secondsUntilBreak, afterResume - 1, "ticks should resume decrementing the countdown after resume")
+        XCTAssertEqual(bm.secondsUntilBreak, remainingAtPause - 1, "ticks should resume decrementing the countdown after resume")
+    }
+
+    // MARK: - manual pause/resume numeric continuity, floored at cooldown
+
+    func testResumeByUserRestoresExactRemainingTimeWhenAboveCooldown() {
+        settings.shortBreakInterval = 10 // 600s
+        settings.smartPauseCooldown = 120
+        bm.resetForTesting()
+
+        for _ in 0..<50 { bm.tick() } // 550 remaining, comfortably above the cooldown
+        XCTAssertEqual(bm.secondsUntilBreak, 550)
+
+        bm.pauseByUser()
+        XCTAssertEqual(bm.secondsUntilBreak, 550, "pausing must not itself change the countdown")
+
+        bm.resumeByUser()
+        XCTAssertEqual(bm.state, .working)
+        XCTAssertEqual(bm.secondsUntilBreak, 550, "plenty of time was left, so it should carry over unchanged")
+    }
+
+    func testResumeByUserFloorsRemainingTimeAtCooldown() {
+        settings.shortBreakInterval = 10 // 600s
+        settings.smartPauseCooldown = 120
+        bm.resetForTesting()
+
+        for _ in 0..<595 { bm.tick() } // only 5s remaining, well under the cooldown
+        XCTAssertEqual(bm.secondsUntilBreak, 5)
+
+        bm.pauseByUser()
+        bm.resumeByUser()
+
+        XCTAssertEqual(bm.state, .working)
+        XCTAssertEqual(bm.secondsUntilBreak, settings.smartPauseCooldown, "should be floored at the cooldown instead of resuming with almost no time left, same as resumeFromSmartPause()")
     }
 
     // MARK: - smart pause resume, floored at cooldown

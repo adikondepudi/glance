@@ -75,7 +75,7 @@ class SmartPauseManager: ObservableObject {
         for deviceID in deviceIDs {
             // Check if this camera device is actively being used
             var isRunning: UInt32 = 0
-            var runningSize = UInt32(MemoryLayout<UInt32>.size)
+            let runningSize = UInt32(MemoryLayout<UInt32>.size)
             var runningProperty = CMIOObjectPropertyAddress(
                 mSelector: CMIOObjectPropertySelector(kCMIODevicePropertyDeviceIsRunningSomewhere),
                 mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
