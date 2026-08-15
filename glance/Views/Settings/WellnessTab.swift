@@ -9,7 +9,7 @@ struct WellnessTab: View {
         Form {
             Section("Blink Reminder") {
                 Toggle("Enable blink reminders", isOn: $settings.blinkReminderEnabled)
-                    .onChange(of: settings.blinkReminderEnabled) { _ in
+                    .onChange(of: settings.blinkReminderEnabled) {
                         Task { @MainActor in
                             WellnessManager.shared.resetTimers()
                         }
@@ -27,7 +27,7 @@ struct WellnessTab: View {
                         }
                         .labelsHidden()
                         .frame(width: 140)
-                        .onChange(of: settings.blinkReminderInterval) { _ in
+                        .onChange(of: settings.blinkReminderInterval) {
                             Task { @MainActor in
                                 WellnessManager.shared.resetTimers()
                             }
@@ -42,7 +42,7 @@ struct WellnessTab: View {
 
             Section("Posture Reminder") {
                 Toggle("Enable posture reminders", isOn: $settings.postureReminderEnabled)
-                    .onChange(of: settings.postureReminderEnabled) { _ in
+                    .onChange(of: settings.postureReminderEnabled) {
                         Task { @MainActor in
                             WellnessManager.shared.resetTimers()
                         }
@@ -60,7 +60,7 @@ struct WellnessTab: View {
                         }
                         .labelsHidden()
                         .frame(width: 140)
-                        .onChange(of: settings.postureReminderInterval) { _ in
+                        .onChange(of: settings.postureReminderInterval) {
                             Task { @MainActor in
                                 WellnessManager.shared.resetTimers()
                             }

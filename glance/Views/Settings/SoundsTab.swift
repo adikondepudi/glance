@@ -106,7 +106,7 @@ struct SoundsTab: View {
 
                 Text("Custom Sound...").tag("__custom__")
             }
-            .onChange(of: settings.selectedSound) { newValue in
+            .onChange(of: settings.selectedSound) { _, newValue in
                 if newValue == "__custom__" {
                     pickCustomSound(binding: $settings.selectedSound)
                 }
@@ -154,7 +154,7 @@ struct SoundPickerRow: View {
 
             Text("Custom Sound...").tag("__custom__")
         }
-        .onChange(of: selectedSound) { newValue in
+        .onChange(of: selectedSound) { _, newValue in
             if newValue == "__custom__" {
                 let panel = NSOpenPanel()
                 panel.allowedContentTypes = [.audio]

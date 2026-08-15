@@ -54,6 +54,9 @@ class BreakManager: ObservableObject {
     private var lastTimerMode: String = ""
     private var lastWorkInterval: Int = 0
     private var lastPomodoroWork: Int = 0
+    // Guards showPreBreakReminder() so it fires once per approach to a break
+    // rather than on every tick while secondsUntilBreak <= the lead time.
+    private var reminderShownForCurrentCountdown = false
 
     private init() {
         // Snapshot current settings so we can detect changes
@@ -131,6 +134,7 @@ class BreakManager: ObservableObject {
         } else {
             secondsUntilBreak = settings.shortBreakInterval * 60
         }
+        reminderShownForCurrentCountdown = false
 
         sessionStartDate = Date()
         state = .working
@@ -166,8 +170,12 @@ class BreakManager: ObservableObject {
         // Check scheduled breaks
         checkScheduledBreaks()
 
-        // Pre-break reminder
-        if settings.showPreBreakReminder && secondsUntilBreak == settings.preBreakReminderSeconds && state == .working {
+        // Pre-break reminder — fire once we're within the lead time (not just on an
+        // exact tick match, which can be skipped by a postpone landing below it),
+        // guarded so it doesn't re-fire every second afterward.
+        if settings.showPreBreakReminder && !reminderShownForCurrentCountdown
+            && secondsUntilBreak <= settings.preBreakReminderSeconds && state == .working {
+            reminderShownForCurrentCountdown = true
             showPreBreakReminder()
         }
 
@@ -185,6 +193,19 @@ class BreakManager: ObservableObject {
     }
 
     // MARK: - Pre-Break Reminder
+
+    /// Re-arms the shown-once reminder flag whenever secondsUntilBreak is pushed
+    /// back out past the lead time (postpone, smart pause resume) so it shows
+    /// again on the way back down. If the new value is still inside (or at) the
+    /// lead time, the flag is left untouched: if it was already true (the
+    /// reminder was showing and got postponed a short amount) it correctly stays
+    /// suppressed, and if it was still false (postponed straight into the lead
+    /// window without ever having been shown) the very next tick will show it.
+    private func rearmReminderIfBeyondLeadTime(for newSecondsUntilBreak: Int) {
+        if newSecondsUntilBreak > settings.preBreakReminderSeconds {
+            reminderShownForCurrentCountdown = false
+        }
+    }
 
     private func showPreBreakReminder() {
         state = .reminding
@@ -373,6 +394,7 @@ class BreakManager: ObservableObject {
         postponeCountToday += 1
         stats.recordBreakPostponed()
         secondsUntilBreak = seconds
+        rearmReminderIfBeyondLeadTime(for: seconds)
         state = .working
         startWorkTimer()
     }
@@ -436,6 +458,7 @@ class BreakManager: ObservableObject {
         guard case .onBreak = state else { return }
         currentBreakDuration += extraSeconds
         postponeCountToday += 1
+        stats.recordBreakPostponed()
     }
 
     var canPostpone: Bool {
@@ -473,6 +496,7 @@ class BreakManager: ObservableObject {
             // at least the cooldown so a break doesn't fire right after a meeting.
             wasSmartPaused = false
             secondsUntilBreak = max(secondsUntilBreak, settings.smartPauseCooldown)
+            rearmReminderIfBeyondLeadTime(for: secondsUntilBreak)
             state = .working
             startWorkTimer()
         }

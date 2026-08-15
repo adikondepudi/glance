@@ -8,7 +8,7 @@ struct ScheduleTab: View {
         Form {
             Section("Office Hours") {
                 Toggle("Only show breaks during office hours", isOn: $schedule.enabled)
-                    .onChange(of: schedule.enabled) { _ in save() }
+                    .onChange(of: schedule.enabled) { save() }
 
                 if schedule.enabled {
                     Section("Active Days") {
@@ -22,7 +22,7 @@ struct ScheduleTab: View {
                     }
 
                     Toggle("Use different hours per day", isOn: $schedule.usePerDaySchedule)
-                        .onChange(of: schedule.usePerDaySchedule) { _ in save() }
+                        .onChange(of: schedule.usePerDaySchedule) { save() }
 
                     if schedule.usePerDaySchedule {
                         ForEach(sortedActiveDays, id: \.self) { weekday in

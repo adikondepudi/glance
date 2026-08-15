@@ -32,6 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastEscapeTime: Date?
     private var appNapActivity: NSObjectProtocol?
     private var overlayMismatchTicks = 0
+    private var screenChangeDebounceTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent App Nap from throttling our timers — the whole app is timers.
@@ -326,6 +327,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissBreakReminder), name: .dismissBreakReminder, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleShowWindDown), name: .showWindDownOverlay, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDismissWindDown), name: .dismissWindDownOverlay, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(handleScreenParametersChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
     @objc private func handleDismissPopover() {
@@ -412,6 +414,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         breakWindowControllers.removeAll()
         removeEscapeMonitor()
+    }
+
+    // MARK: - Screen Configuration Changes
+
+    // Monitor plug/unplug (or resolution change) fires this, often several times
+    // in a burst as the OS settles on a final configuration — debounce lightly
+    // before reconciling. healOverlayStateMismatch() only cares whether
+    // breakWindowControllers is empty vs. non-empty, and this never leaves it
+    // empty for longer than a synchronous rebuild, so the two don't fight.
+    @objc private func handleScreenParametersChanged() {
+        screenChangeDebounceTimer?.invalidate()
+        screenChangeDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.reconcileBreakOverlaysForScreenChange()
+            }
+        }
+    }
+
+    // Rebuilds the per-screen overlay windows to match the current
+    // NSScreen.screens: screens that were added get a new overlay, screens that
+    // were removed lose theirs, and every remaining window is re-framed to its
+    // (possibly resized) screen. Only relevant while a break overlay is actually
+    // showing — if the break already ended, dismissBreakOverlay() already
+    // cleared breakWindowControllers and there's nothing to reconcile.
+    private func reconcileBreakOverlaysForScreenChange() {
+        guard !breakWindowControllers.isEmpty else { return }
+        showBreakOverlay()
     }
 
     // MARK: - Double Escape (#4)

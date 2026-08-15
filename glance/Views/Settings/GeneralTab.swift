@@ -11,7 +11,7 @@ struct GeneralTab: View {
         Form {
             Section("Startup") {
                 Toggle("Launch at login", isOn: $settings.launchAtLogin)
-                    .onChange(of: settings.launchAtLogin) { newValue in
+                    .onChange(of: settings.launchAtLogin) { _, newValue in
                         setLaunchAtLogin(newValue)
                     }
             }
