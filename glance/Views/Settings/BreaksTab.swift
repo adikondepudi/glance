@@ -105,7 +105,8 @@ struct BreaksTab: View {
             }
 
             Section("Options") {
-                Toggle("Don't show breaks while I'm typing or dragging", isOn: $settings.delayWhileTyping)
+                Toggle("Don't show breaks while I'm typing, dragging, or dictating", isOn: $settings.delayWhileTyping)
+                    .help("Waits up to a minute for typing, an in-progress drag, or active Dictation to finish before starting a break")
                 Toggle("Let me end break early when nearly done", isOn: $settings.allowEarlyEnd)
                 Toggle("Lock my Mac when a break starts", isOn: $settings.lockOnBreak)
 

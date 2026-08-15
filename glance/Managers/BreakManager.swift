@@ -1,6 +1,8 @@
 import Foundation
 import Combine
 import AppKit
+import CoreGraphics
+import Darwin
 
 enum BreakState: Equatable {
     case working
@@ -248,7 +250,7 @@ class BreakManager: ObservableObject {
         reminderDismissTimer?.invalidate()
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
 
-        if settings.delayWhileTyping && isUserTyping() && typingDelayRetries < 20 {
+        if settings.delayWhileTyping && isActiveInputDelayNeeded() && typingDelayRetries < 20 {
             // Delay briefly and retry (capped at ~1 minute of deferral)
             typingDelayRetries += 1
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -785,10 +787,65 @@ class BreakManager: ObservableObject {
         return messages.randomElement() ?? "Look away and rest your eyes"
     }
 
+    /// The single gate behind `settings.delayWhileTyping`: true if the user is
+    /// actively typing, mid-drag, or dictating, in which case
+    /// `startBreakSequence` defers rather than interrupting them.
+    private func isActiveInputDelayNeeded() -> Bool {
+        return isUserTyping() || isUserDragging() || isDictationActive()
+    }
+
     private func isUserTyping() -> Bool {
         // Check if any key has been pressed recently (last 2 seconds)
         let idleTime = idleDetector.systemIdleTime
         return idleTime < 2
+    }
+
+    /// True while a mouse button is physically held down (i.e. a drag is in
+    /// progress). `CGEventSource.buttonState` reads the hardware button state
+    /// directly — unlike a `CGEventTap`, it needs no Accessibility permission
+    /// or other entitlement, so this is safe to call unconditionally.
+    private func isUserDragging() -> Bool {
+        CGEventSource.buttonState(.combinedSessionState, button: .left)
+            || CGEventSource.buttonState(.combinedSessionState, button: .right)
+    }
+
+    /// True while macOS Dictation is actively listening. Dictation's
+    /// input-method helper, `DictationIM` (`/System/Library/Input
+    /// Methods/DictationIM.app`), is registered with launchd as an on-demand
+    /// mach service (see its LaunchAgent property list) rather than a
+    /// resident daemon — it is absent from the process list at idle and only
+    /// appears while a dictation session is actually active. That makes it a
+    /// signal specific to Dictation, unlike raw microphone-in-use (already
+    /// used for meeting detection in `SmartPauseManager`), which would
+    /// otherwise be indistinguishable from a call.
+    private func isDictationActive() -> Bool {
+        runningProcessNames().contains("DictationIM")
+    }
+
+    /// Enumerates current process names via `sysctl(KERN_PROC_ALL)` — the
+    /// same permissionless mechanism `ps`/`top` use to list every process on
+    /// the system, requiring no entitlements or permission prompts.
+    private func runningProcessNames() -> Set<String> {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [] }
+
+        let count = size / MemoryLayout<kinfo_proc>.stride
+        var procList = [kinfo_proc](repeating: kinfo_proc(), count: count)
+        guard sysctl(&mib, u_int(mib.count), &procList, &size, nil, 0) == 0 else { return [] }
+
+        let actualCount = size / MemoryLayout<kinfo_proc>.stride
+        var names = Set<String>()
+        names.reserveCapacity(actualCount)
+        for i in 0..<actualCount {
+            let comm = procList[i].kp_proc.p_comm
+            let name = withUnsafeBytes(of: comm) { rawBuffer -> String in
+                let ptr = rawBuffer.baseAddress!.assumingMemoryBound(to: CChar.self)
+                return String(cString: ptr)
+            }
+            names.insert(name)
+        }
+        return names
     }
 
     private func lockScreen() {
