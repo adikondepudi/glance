@@ -1,5 +1,5 @@
 cask "glance" do
-  version "1.0.3"
+  version "1.1.0"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000" # replace with `shasum -a 256` output for the release DMG — see packaging/homebrew/README.md
 
   url "https://github.com/adikondepudi/glance/releases/download/v#{version}/Glance-#{version}.dmg",

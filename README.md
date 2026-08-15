@@ -6,18 +6,19 @@ Glance lives in your menu bar and gently nudges you to look away from your scree
 
 ## Install
 
+### Homebrew
+
+```bash
+brew install --cask adikondepudi/tap/glance
+```
+
+### Direct download
+
 1. Download **Glance.dmg** from [Releases](../../releases/latest)
 2. Open the DMG and drag Glance to your Applications folder
 3. Launch Glance from Applications
 
-> **First launch:** Since Glance is not notarized by Apple, macOS will block it from opening. To allow it:
->
-> 1. Open **System Settings** → **Privacy & Security**
-> 2. Scroll down to the **Security** section
-> 3. Find Glance listed and click **Open Anyway**
-> 4. Click **Open** in the confirmation dialog
->
-> You only need to do this once. Future launches will work normally.
+Glance is code-signed and notarized by Apple, so it opens without any security warnings.
 
 Glance runs as a menu bar app — look for the icon in the top-right of your screen. There's no dock icon by design.
 
