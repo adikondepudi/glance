@@ -6,6 +6,9 @@ struct GeneralTab: View {
     @EnvironmentObject var settings: AppSettings
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var showResetConfirmation = false
+    @State private var startShortcutExists: Bool?
+    @State private var endShortcutExists: Bool?
+    @State private var isTestingFocusSync = false
 
     var body: some View {
         Form {
@@ -102,6 +105,52 @@ struct GeneralTab: View {
                 }
             }
 
+            Section("Focus Sync") {
+                Toggle("Sync breaks to a Focus", isOn: $settings.focusSyncEnabled)
+                    .onChange(of: settings.focusSyncEnabled) { _, newValue in
+                        if newValue { refreshShortcutStatus() }
+                    }
+
+                if settings.focusSyncEnabled {
+                    LabeledContent("Break start shortcut") {
+                        TextField("Shortcut name", text: $settings.focusSyncStartShortcut)
+                            .onSubmit { refreshShortcutStatus() }
+                    }
+                    shortcutStatusRow(name: settings.focusSyncStartShortcut, exists: startShortcutExists)
+
+                    LabeledContent("Break end shortcut") {
+                        TextField("Shortcut name", text: $settings.focusSyncEndShortcut)
+                            .onSubmit { refreshShortcutStatus() }
+                    }
+                    shortcutStatusRow(name: settings.focusSyncEndShortcut, exists: endShortcutExists)
+
+                    HStack {
+                        Button("Test") {
+                            testFocusSync()
+                        }
+                        .disabled(isTestingFocusSync)
+
+                        if isTestingFocusSync {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Running start, then end in 5s…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button("Refresh Status") {
+                            refreshShortcutStatus()
+                        }
+                    }
+
+                    Text("Create two shortcuts in the Shortcuts app, each with a \"Set Focus\" action — one turns a Focus on, the other turns it off — named to match above. Glance runs them via the shortcuts CLI when a break starts and ends; it never sets Focus directly, so what each device does with the signal (via Focus sync or a Personal Automation) is up to you.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Updates") {
                 HStack {
                     Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?")")
@@ -118,6 +167,9 @@ struct GeneralTab: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            if settings.focusSyncEnabled { refreshShortcutStatus() }
+        }
         .alert("Reset All Settings?", isPresented: $showResetConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Reset", role: .destructive) {
@@ -167,6 +219,49 @@ struct GeneralTab: View {
                     updateManager.checkForUpdates()
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func shortcutStatusRow(name: String, exists: Bool?) -> some View {
+        HStack(spacing: 4) {
+            switch exists {
+            case .some(true):
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("\"\(name)\" found in Shortcuts")
+                    .foregroundStyle(.secondary)
+            case .some(false):
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("\"\(name)\" not found — create it in the Shortcuts app")
+                    .foregroundStyle(.secondary)
+            case .none:
+                ProgressView()
+                    .controlSize(.small)
+                Text("Checking…")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+    }
+
+    private func refreshShortcutStatus() {
+        startShortcutExists = nil
+        endShortcutExists = nil
+        let start = settings.focusSyncStartShortcut
+        let end = settings.focusSyncEndShortcut
+        FocusBridgeManager.shared.checkExistence(of: [start, end]) { result in
+            startShortcutExists = result[start] ?? false
+            endShortcutExists = result[end] ?? false
+        }
+    }
+
+    private func testFocusSync() {
+        isTestingFocusSync = true
+        FocusBridgeManager.shared.runTest(startName: settings.focusSyncStartShortcut, endName: settings.focusSyncEndShortcut)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+            isTestingFocusSync = false
         }
     }
 

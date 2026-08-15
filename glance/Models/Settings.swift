@@ -234,6 +234,11 @@ class AppSettings: ObservableObject {
         set { menuBarStyleRaw = newValue.rawValue }
     }
 
+    // MARK: Focus Sync (sync breaks to a Focus mode via the Shortcuts CLI)
+    @AppStorage("focusSyncEnabled") var focusSyncEnabled: Bool = false
+    @AppStorage("focusSyncStartShortcut") var focusSyncStartShortcut: String = "Glance Break Started"
+    @AppStorage("focusSyncEndShortcut") var focusSyncEndShortcut: String = "Glance Break Ended"
+
     // MARK: Complex Settings (JSON-encoded in UserDefaults)
 
     var officeHours: OfficeHoursSchedule {

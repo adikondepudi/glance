@@ -37,7 +37,27 @@ Glance runs as a menu bar app — look for the icon in the top-right of your scr
 
 **Automations** — Run AppleScripts or shell commands when breaks start or end. Pause music, change Slack status, enable Do Not Disturb — whatever you want.
 
+**Focus Sync** — Optionally sync breaks to an iOS/macOS Focus mode via Shortcuts, so every Apple device you own reflects break state. See [Sync breaks to your other devices](#sync-breaks-to-your-other-devices-focus) below.
+
 **Keyboard Shortcuts** — `Cmd+Shift+B` to start a break, `Cmd+Shift+P` to pause/resume.
+
+## Sync breaks to your other devices (Focus)
+
+There's no public API for an app to turn Focus on or off directly, so Glance bridges through the Shortcuts app instead. Glance sends the signal ("a break just started/ended"); each device decides what to do with it.
+
+1. Open the **Shortcuts** app and create two shortcuts:
+   - **Glance Break Started** — add the **Set Focus** action, set it to turn a Focus **on** (a custom "Break" Focus works well) **until turned off**.
+   - **Glance Break Ended** — add **Set Focus**, set it to turn that same Focus **off**.
+2. In Glance, open **Settings → General → Focus Sync**, turn on **Sync breaks to a Focus**, and confirm the shortcut names match (defaults are "Glance Break Started" / "Glance Break Ended"). Glance shows a green check next to each name once it finds it in Shortcuts.
+3. Use the **Test** button to run the start shortcut, then the end shortcut a few seconds later, so you can confirm the Focus actually toggles before relying on it.
+
+Since Focus state syncs across your Apple devices via iCloud, every signed-in device now knows when you're on a break. From there it's up to you — add per-device **Personal Automations** in Shortcuts that react to the Focus turning on or off, for example:
+
+- **iPhone**: show a calm lock screen, or silence notifications
+- **iPad**: open a stretch or breathing app
+- **Mac**: pause music, or set a break-themed desktop
+
+Glance never sets Focus directly and never blocks anything on this working — if the shortcut is missing or `shortcuts run` fails, Glance logs it and moves on with the break as normal.
 
 ## Updating
 

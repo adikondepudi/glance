@@ -33,6 +33,7 @@ class BreakManager: ObservableObject {
     private let smartPause = SmartPauseManager.shared
     private let idleDetector = IdleDetector.shared
     private let automation = AutomationManager.shared
+    private let focusBridge = FocusBridgeManager.shared
     private let sound = SoundManager.shared
     private let stats = StatsManager.shared
 
@@ -300,6 +301,9 @@ class BreakManager: ObservableObject {
         let trigger: AutomationAction.AutomationTrigger = isLong ? .longBreakStart : .breakStart
         automation.runAutomations(for: trigger)
 
+        // Sync a Focus mode across devices (no-op unless enabled in Settings)
+        focusBridge.breakDidStart()
+
         // Lock screen if enabled (with mode check)
         if settings.lockOnBreak {
             let mode = settings.lockOnBreakMode
@@ -339,6 +343,9 @@ class BreakManager: ObservableObject {
 
         let trigger: AutomationAction.AutomationTrigger = isLong ? .longBreakEnd : .breakEnd
         automation.runAutomations(for: trigger)
+
+        // Sync a Focus mode across devices (no-op unless enabled in Settings)
+        focusBridge.breakDidEnd()
 
         shortBreakCount += 1
         secondsSinceLastBreak = 0
