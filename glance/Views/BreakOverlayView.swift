@@ -3,6 +3,7 @@ import SwiftUI
 struct BreakOverlayView: View {
     @EnvironmentObject var breakManager: BreakManager
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var garden: GardenManager
     @State private var showSkipButton = false
     @State private var appear = false
     @State private var breathe = false
@@ -23,7 +24,13 @@ struct BreakOverlayView: View {
                     .opacity(breathe ? 0.9 : 0.6)
                     .animation(.easeInOut(duration: 3).repeatForever(autoreverses: true), value: breathe)
 
-                Spacer().frame(height: 32)
+                if settings.gardenEnabled {
+                    Spacer().frame(height: 24)
+                    GardenOverlayView()
+                    Spacer().frame(height: 16)
+                } else {
+                    Spacer().frame(height: 32)
+                }
 
                 // Message
                 Text(breakManager.currentMessage)
@@ -188,6 +195,7 @@ class BreakWindowController: NSWindowController {
             rootView: BreakOverlayView()
                 .environmentObject(BreakManager.shared)
                 .environmentObject(AppSettings.shared)
+                .environmentObject(GardenManager.shared)
         )
         window.contentView = hostingView
 

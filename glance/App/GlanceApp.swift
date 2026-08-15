@@ -24,6 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let wellness = WellnessManager.shared
     private let windDown = WindDownManager.shared
     private let stats = StatsManager.shared
+    private let garden = GardenManager.shared
     private let settings = AppSettings.shared
     private var eventMonitor: Any?
     private var clickMonitor: Any?
@@ -46,6 +47,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupSettingsWindowObserver()
         wellness.start()
         windDown.start()
+        garden.checkDailyDecay()
+        setupDayChangeObserver()
         setupGlobalShortcuts()
         migrateSoundSettings()
 
@@ -57,6 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         stats.saveNow()
+        garden.saveNow()
     }
 
     // MARK: - Sound Settings Migration
@@ -131,6 +135,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             showBreakOverlay()
         } else {
             dismissBreakOverlay()
+        }
+    }
+
+    private func setupDayChangeObserver() {
+        NotificationCenter.default.addObserver(
+            forName: .NSCalendarDayChanged,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.garden.checkDailyDecay()
+            }
         }
     }
 

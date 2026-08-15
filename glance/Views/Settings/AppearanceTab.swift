@@ -3,9 +3,45 @@ import UniformTypeIdentifiers
 
 struct AppearanceTab: View {
     @EnvironmentObject var settings: AppSettings
+    @ObservedObject private var garden = GardenManager.shared
+    @State private var showResetAlert = false
 
     var body: some View {
         Form {
+            Section("Garden") {
+                Toggle("Show garden during breaks", isOn: $settings.gardenEnabled)
+
+                if settings.gardenEnabled {
+                    Picker("Theme", selection: $settings.gardenTheme) {
+                        ForEach(GardenThemeType.allCases, id: \.self) { type in
+                            Text(type.displayName).tag(type.rawValue)
+                        }
+                    }
+
+                    LabeledContent("Growth") {
+                        Text("\(garden.stage.displayName) (\(garden.state.growth)/100)")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if garden.state.currentStreak > 0 {
+                        LabeledContent("Streak") {
+                            Text("\(garden.state.currentStreak) day\(garden.state.currentStreak == 1 ? "" : "s")")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Button("Reset Garden", role: .destructive) {
+                        showResetAlert = true
+                    }
+                    .alert("Reset Garden?", isPresented: $showResetAlert) {
+                        Button("Reset", role: .destructive) { garden.resetGarden() }
+                        Button("Cancel", role: .cancel) { }
+                    } message: {
+                        Text("This will reset all garden progress. This cannot be undone.")
+                    }
+                }
+            }
+
             Section("Break Background") {
                 Picker("Style", selection: $settings.breakBackgroundStyle) {
                     Text("Gradient").tag("gradient")

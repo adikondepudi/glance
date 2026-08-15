@@ -186,6 +186,10 @@ class AppSettings: ObservableObject {
     @AppStorage("breakSolidColor") var breakSolidColor: String = "#1a1a2e"
     @AppStorage("breakImagePath") var breakImagePath: String = ""
 
+    // MARK: Garden
+    @AppStorage("gardenEnabled") var gardenEnabled: Bool = true
+    @AppStorage("gardenTheme") var gardenTheme: String = "gardener"
+
     // MARK: Sound
     @AppStorage("playSoundOnBreakEnd") var playSoundOnBreakEnd: Bool = true
     @AppStorage("playSoundOnBreakStart") var playSoundOnBreakStart: Bool = false

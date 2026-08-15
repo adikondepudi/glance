@@ -321,6 +321,7 @@ class BreakManager: ObservableObject {
 
         // Stats
         stats.recordBreakCompleted(isLong: isLong)
+        GardenManager.shared.recordBreakCompleted(isLong: isLong)
 
         // Reset consecutive skip counter on successful break
         breaksSkippedCount = 0
@@ -346,6 +347,7 @@ class BreakManager: ObservableObject {
         reminderDismissTimer?.invalidate()
         breaksSkippedCount += 1
         stats.recordBreakSkipped()
+        GardenManager.shared.recordBreakSkipped()
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
         NotificationCenter.default.post(name: .dismissBreakOverlay, object: nil)
         resetWorkTimer()
@@ -356,6 +358,7 @@ class BreakManager: ObservableObject {
         if settings.skipDifficulty == .hardcore { return }
         breaksSkippedCount += 1
         stats.recordBreakSkipped()
+        GardenManager.shared.recordBreakSkipped()
         endBreak(isLong: isLong)
     }
 
@@ -372,6 +375,7 @@ class BreakManager: ObservableObject {
         NotificationCenter.default.post(name: .dismissBreakReminder, object: nil)
         postponeCountToday += 1
         stats.recordBreakPostponed()
+        GardenManager.shared.recordBreakPostponed()
         secondsUntilBreak = seconds
         state = .working
         startWorkTimer()
