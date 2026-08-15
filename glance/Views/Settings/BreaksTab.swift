@@ -3,6 +3,7 @@ import SwiftUI
 struct BreaksTab: View {
     @EnvironmentObject var settings: AppSettings
     @State private var newMessage: String = ""
+    @State private var newMovementPrompt: String = ""
     @State private var showingScheduledBreakEditor = false
     @State private var editingScheduledBreak: ScheduledBreak?
 
@@ -87,9 +88,40 @@ struct BreaksTab: View {
 
                         Toggle("Make long breaks movement breaks", isOn: $settings.movementBreaksEnabled)
 
-                        Text("Long breaks will prompt you to stand, walk, or stretch. Glance verifies you actually stepped away using input idle time — no camera, no tracking, all on-device.")
+                        Text("Long breaks will prompt you to stand, walk, or stretch, on the schedule set above. Glance verifies you actually stepped away using input idle time — no camera, no tracking, all on-device.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if settings.longBreakEnabled && settings.movementBreaksEnabled {
+                Section("Movement Prompts") {
+                    ForEach(Array(settings.movementMessages.enumerated()), id: \.offset) { index, message in
+                        HStack {
+                            Text(message)
+                                .lineLimit(1)
+                            Spacer()
+                            Button(role: .destructive) {
+                                var msgs = settings.movementMessages
+                                msgs.remove(at: index)
+                                settings.movementMessages = msgs
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+
+                    HStack {
+                        TextField("Add a prompt…", text: $newMovementPrompt)
+                            .onSubmit { addMovementPrompt() }
+                        Button("Add") { addMovementPrompt() }
+                            .disabled(newMovementPrompt.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("Restore Defaults") {
+                            settings.movementMessages = AppSettings.defaultMovementMessages
+                        }
                     }
                 }
             }
@@ -258,6 +290,15 @@ struct BreaksTab: View {
         msgs.append(trimmed)
         settings.customMessages = msgs
         newMessage = ""
+    }
+
+    private func addMovementPrompt() {
+        let trimmed = newMovementPrompt.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        var msgs = settings.movementMessages
+        msgs.append(trimmed)
+        settings.movementMessages = msgs
+        newMovementPrompt = ""
     }
 }
 

@@ -329,6 +329,29 @@ class AppSettings: ObservableObject {
         }
     }
 
+    static let defaultMovementMessages: [String] = [
+        "Walk a loop around your home",
+        "Refill your water bottle",
+        "10 bodyweight squats",
+        "Stretch your hip flexors — deep lunge, each side",
+        "Doorway chest stretch",
+        "Shoulder rolls and a neck stretch",
+        "Step outside for fresh air",
+        "Calf raises while you wait",
+        "Walk while you take that call",
+        "Touch your toes and hang for 30 seconds"
+    ]
+
+    var movementMessages: [String] {
+        get {
+            UserDefaults.standard.stringArray(forKey: "movementMessages") ?? Self.defaultMovementMessages
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "movementMessages")
+            objectWillChange.send()
+        }
+    }
+
     var excludedMicDevices: [String] {
         get { UserDefaults.standard.stringArray(forKey: "excludedMicDevices") ?? [] }
         set {

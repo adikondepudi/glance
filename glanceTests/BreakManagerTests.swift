@@ -37,7 +37,7 @@ final class BreakManagerTests: XCTestCase {
         "playSoundShortBreakStart", "playSoundShortBreakEnd",
         "playSoundLongBreakStart", "playSoundLongBreakEnd",
         "officeHours", "scheduledBreaks", "automations",
-        "hasCompletedOnboarding", "customMessages",
+        "hasCompletedOnboarding", "customMessages", "movementMessages",
     ]
 
     /// Redirects StatsManager's on-disk persistence to a per-run scratch
@@ -99,6 +99,8 @@ final class BreakManagerTests: XCTestCase {
             "Stretch your shoulders",
             "Rest your eyes, you deserve it",
         ]
+        // Same reasoning for the (user-editable) movement prompt pool.
+        settings.movementMessages = AppSettings.defaultMovementMessages
 
         bm = BreakManager.shared
         bm.resetForTesting()
@@ -432,6 +434,18 @@ final class BreakManagerTests: XCTestCase {
     private func movementEventsRecorded(since mark: Int) -> [StatsEvent] {
         Array(StatsManager.shared.todayStats.events.suffix(from: mark))
             .filter { $0.type == .movementBreak }
+    }
+
+    func testMovementBreakUsesUserEditedPromptPool() {
+        settings.longBreakEnabled = true
+        settings.movementBreaksEnabled = true
+        settings.movementMessages = ["March in place for a minute"]
+        bm.resetForTesting()
+
+        bm.startLongBreakNow()
+
+        XCTAssertEqual(bm.currentMessage, "March in place for a minute",
+                       "a movement break should draw its prompt from the user-editable movementMessages pool")
     }
 
     func testMovementBreakNaturalCompletionWithFullIdleRecordsMoved() {

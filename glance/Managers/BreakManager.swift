@@ -787,29 +787,14 @@ class BreakManager: ObservableObject {
 
     // MARK: - Helpers
 
-    /// Built-in prompts shown for a movement long break instead of the
-    /// user's normal custom message list — see `randomMessage(isLong:)`.
-    private static let movementMessages: [String] = [
-        "Walk a loop around your home",
-        "Refill your water bottle",
-        "10 bodyweight squats",
-        "Stretch your hip flexors — deep lunge, each side",
-        "Doorway chest stretch",
-        "Shoulder rolls and a neck stretch",
-        "Step outside for fresh air",
-        "Calf raises while you wait",
-        "Walk while you take that call",
-        "Touch your toes and hang for 30 seconds"
-    ]
-
     /// Picks the message to show for the next break. When `isLong` and
-    /// movement breaks are enabled, this draws from the built-in movement
-    /// prompt pool instead of the user's custom message list — short breaks
-    /// (the default `isLong: false`) and long breaks with the feature off are
-    /// untouched.
+    /// movement breaks are enabled, this draws from the user-editable movement
+    /// prompt pool (`settings.movementMessages`) instead of the normal custom
+    /// message list — short breaks (the default `isLong: false`) and long
+    /// breaks with the feature off are untouched.
     private func randomMessage(isLong: Bool = false) -> String {
         if isLong && settings.movementBreaksEnabled {
-            return Self.movementMessages.randomElement() ?? "Stand up and move for a few minutes"
+            return settings.movementMessages.randomElement() ?? "Stand up and move for a few minutes"
         }
         let messages = settings.customMessages
         return messages.randomElement() ?? "Look away and rest your eyes"
